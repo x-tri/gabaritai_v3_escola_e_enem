@@ -732,25 +732,38 @@ export default function Home() {
     const questionStats = answerKey.map((_, qIndex) => {
       let correctCount = 0;
       let wrongCount = 0;
-      
+      let blankCount = 0;
+      const distribution: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+
       studentsWithScores.forEach(student => {
-        if (student.answers[qIndex]) {
-          if (student.answers[qIndex].toUpperCase() === answerKey[qIndex].toUpperCase()) {
+        const answer = student.answers[qIndex];
+        if (answer) {
+          const upperAnswer = answer.toUpperCase().trim();
+          if (upperAnswer === answerKey[qIndex].toUpperCase()) {
             correctCount++;
           } else {
             wrongCount++;
           }
+          // Contar distribuição por letra
+          if (distribution.hasOwnProperty(upperAnswer)) {
+            distribution[upperAnswer]++;
+          }
+        } else {
+          blankCount++;
         }
       });
-      
+
       const content = questionContents[qIndex]?.content || "";
-      
+
       return {
         questionNumber: qIndex + 1,
         correctCount,
         wrongCount,
-        correctPercentage: studentsWithScores.length > 0 
-          ? Math.round((correctCount / studentsWithScores.length) * 100) 
+        blankCount,
+        distribution,
+        correctAnswer: answerKey[qIndex]?.toUpperCase() || "",
+        correctPercentage: studentsWithScores.length > 0
+          ? Math.round((correctCount / studentsWithScores.length) * 100)
           : 0,
         content: content,
       };
@@ -867,42 +880,50 @@ export default function Home() {
       // Notas TRI por área (LC, CH, CN, MT)
       const triAreaScores = triScoresByArea.get(student.id) || {};
 
+      // Verificar se o aluno fez cada dia (para merge Dia 1 + Dia 2)
+      const fezDia1 = (student as any).fezDia1 !== false; // Se não tiver flag, assume que fez
+      const fezDia2 = (student as any).fezDia2 !== false; // Se não tiver flag, assume que fez
+
       // Acertos por área
       const areaCorrectAnswers = student.areaCorrectAnswers || {};
 
       // Acertos por área (para usar no cálculo de totais)
-      const lcAcertos = areaCorrectAnswers.LC || 0;
-      const chAcertos = areaCorrectAnswers.CH || 0;
-      const cnAcertos = areaCorrectAnswers.CN || 0;
-      const mtAcertos = areaCorrectAnswers.MT || 0;
+      // IMPORTANTE: Se não fez o dia, acertos = null (não 0)
+      const lcAcertos = fezDia1 ? (areaCorrectAnswers.LC || 0) : null;
+      const chAcertos = fezDia1 ? (areaCorrectAnswers.CH || 0) : null;
+      const cnAcertos = fezDia2 ? (areaCorrectAnswers.CN || 0) : null;
+      const mtAcertos = fezDia2 ? (areaCorrectAnswers.MT || 0) : null;
 
-      // CORREÇÃO: Acertos totais = soma de TODAS as 4 áreas (não só do template atual)
-      const acertosTotais = lcAcertos + chAcertos + cnAcertos + mtAcertos;
+      // CORREÇÃO: Acertos totais = soma apenas das áreas que o aluno fez
+      const acertosTotais = (lcAcertos || 0) + (chAcertos || 0) + (cnAcertos || 0) + (mtAcertos || 0);
 
       return {
         id: student.id, // ID para buscar triScores
         matricula: student.studentNumber,
         nome: student.studentName,
         turma: extractTurmaFromStudent(student),
-        acertos: acertosTotais, // CORRIGIDO: Soma de TODAS as áreas (LC + CH + CN + MT)
+        acertos: acertosTotais, // Soma das áreas que o aluno fez
         erros: student.wrongAnswers || 0,
         nota: notaTCT,
         triScore: triScoreFormatted,
-        // TCT: acertos × 0.222
-        lc: areaCorrectAnswers.LC !== undefined ? parseFloat((lcAcertos * 0.222).toFixed(1)) : null,
-        ch: areaCorrectAnswers.CH !== undefined ? parseFloat((chAcertos * 0.222).toFixed(1)) : null,
-        cn: areaCorrectAnswers.CN !== undefined ? parseFloat((cnAcertos * 0.222).toFixed(1)) : null,
-        mt: areaCorrectAnswers.MT !== undefined ? parseFloat((mtAcertos * 0.222).toFixed(1)) : null,
-        // TRI por área
-        triLc: triAreaScores.LC !== undefined ? parseFloat(triAreaScores.LC.toFixed(2)) : null,
-        triCh: triAreaScores.CH !== undefined ? parseFloat(triAreaScores.CH.toFixed(2)) : null,
-        triCn: triAreaScores.CN !== undefined ? parseFloat(triAreaScores.CN.toFixed(2)) : null,
-        triMt: triAreaScores.MT !== undefined ? parseFloat(triAreaScores.MT.toFixed(2)) : null,
-        // Acertos por área
-        lcAcertos,
-        chAcertos,
-        cnAcertos,
-        mtAcertos,
+        // Flags de presença
+        fezDia1,
+        fezDia2,
+        // TCT: acertos × 0.222 (null se não fez)
+        lc: fezDia1 && lcAcertos !== null ? parseFloat((lcAcertos * 0.222).toFixed(1)) : null,
+        ch: fezDia1 && chAcertos !== null ? parseFloat((chAcertos * 0.222).toFixed(1)) : null,
+        cn: fezDia2 && cnAcertos !== null ? parseFloat((cnAcertos * 0.222).toFixed(1)) : null,
+        mt: fezDia2 && mtAcertos !== null ? parseFloat((mtAcertos * 0.222).toFixed(1)) : null,
+        // TRI por área (null se não fez)
+        triLc: fezDia1 && triAreaScores.LC != null ? parseFloat(Number(triAreaScores.LC).toFixed(2)) : null,
+        triCh: fezDia1 && triAreaScores.CH != null ? parseFloat(Number(triAreaScores.CH).toFixed(2)) : null,
+        triCn: fezDia2 && triAreaScores.CN != null ? parseFloat(Number(triAreaScores.CN).toFixed(2)) : null,
+        triMt: fezDia2 && triAreaScores.MT != null ? parseFloat(Number(triAreaScores.MT).toFixed(2)) : null,
+        // Acertos por área (null se não fez)
+        lcAcertos: lcAcertos,
+        chAcertos: chAcertos,
+        cnAcertos: cnAcertos,
+        mtAcertos: mtAcertos,
         // Disciplinas vazias para ENEM
         disciplineScores: {},
         disciplineAcertos: {},
@@ -4094,10 +4115,17 @@ export default function Home() {
       // 2. Mesclar gabarito (Dia 1: 90 questões + Dia 2: 90 questões = 180)
       const gabaritoDia1 = projetoDia1.answerKey || [];
       const gabaritoDia2 = answerKey; // Gabarito atual (Dia 2)
-      const gabaritoCompleto = [...gabaritoDia1.slice(0, 90), ...gabaritoDia2.slice(0, 90)];
-      
-      console.log("[MERGE] Gabarito Dia 1:", gabaritoDia1.length, "questões");
-      console.log("[MERGE] Gabarito Dia 2:", gabaritoDia2.length, "questões");
+
+      // CRÍTICO: O gabarito do Dia 2 foi importado nas posições 90-179 (Q91-180)
+      // Então precisamos pegar .slice(90, 180) e não .slice(0, 90)
+      const gabaritoDia2Real = gabaritoDia2.length >= 180
+        ? gabaritoDia2.slice(90, 180)  // Posições 90-179 = Q91-180
+        : gabaritoDia2.slice(0, 90);   // Fallback se for array de 90
+
+      const gabaritoCompleto = [...gabaritoDia1.slice(0, 90), ...gabaritoDia2Real];
+
+      console.log("[MERGE] Gabarito Dia 1:", gabaritoDia1.length, "questões, slice(0,90):", gabaritoDia1.slice(0, 5).join(","));
+      console.log("[MERGE] Gabarito Dia 2:", gabaritoDia2.length, "questões, usando posições 90-179:", gabaritoDia2Real.slice(0, 5).join(","));
       console.log("[MERGE] Gabarito Completo:", gabaritoCompleto.length, "questões");
 
       // 3. Mesclar alunos por MATRÍCULA (studentNumber) - BLINDAGEM TOTAL
@@ -4124,18 +4152,26 @@ export default function Home() {
       console.log("[MERGE] Total matrículas únicas:", todasMatriculas.size);
       console.log("[MERGE] Alunos Dia 1:", alunosDia1Map.size);
       console.log("[MERGE] Alunos Dia 2:", alunosDia2Map.size);
-      
+
       const alunosMesclados: any[] = [];
-      
+      const alunosSoDia1: string[] = [];
+      const alunosSoDia2: string[] = [];
+
       const alunosDia2Processados = [...students];
 
       todasMatriculas.forEach(matricula => {
         const alunoDia1 = alunosDia1Map.get(matricula);
         const alunoDia2 = alunosDia2Map.get(matricula);
-        
+
         // Respostas: 90 do Dia 1 + 90 do Dia 2 = 180 total
         const respostasDia1 = alunoDia1?.answers?.slice(0, 90) || Array(90).fill("");
-        const respostasDia2 = alunoDia2?.answers?.slice(0, 90) || Array(90).fill("");
+
+        // CRÍTICO: Respostas do Dia 2 podem estar nas posições 90-179 (se array tem 180)
+        // ou nas posições 0-89 (se array tem 90)
+        const respostasDia2 = alunoDia2?.answers?.length >= 180
+          ? alunoDia2.answers.slice(90, 180)  // Posições 90-179 = Q91-180
+          : (alunoDia2?.answers?.slice(0, 90) || Array(90).fill(""));
+
         const respostasCompletas = [...respostasDia1, ...respostasDia2];
         
         // Mesclar areaScores (TCT)
@@ -4176,13 +4212,17 @@ export default function Home() {
           fezDia2: !!alunoDia2,
         };
         
-        // Log de debug
+        // Log de debug detalhado e coleta de alunos incompletos
         if (!alunoDia1) {
           console.log(`[MERGE] ⚠️ Aluno ${matricula} só fez Dia 2`);
+          alunosSoDia2.push(matricula);
         } else if (!alunoDia2) {
           console.log(`[MERGE] ⚠️ Aluno ${matricula} só fez Dia 1`);
+          alunosSoDia1.push(matricula);
         } else {
           console.log(`[MERGE] ✅ Aluno ${matricula} fez Dia 1 + Dia 2`);
+          console.log(`[MERGE]   Respostas: Dia1[0-4]=${respostasDia1.slice(0,5).join(",")}, Dia2[0-4]=${respostasDia2.slice(0,5).join(",")}`);
+          console.log(`[MERGE]   Acertos: LC=${areaCorrectAnswersMesclados.LC} CH=${areaCorrectAnswersMesclados.CH} CN=${areaCorrectAnswersMesclados.CN} MT=${areaCorrectAnswersMesclados.MT}`);
         }
         
         alunosMesclados.push(alunoMesclado);
@@ -4204,74 +4244,63 @@ export default function Home() {
         setSelectedTemplateIndex(enemFullIdx);
       }
 
-      // 5. JUNTAR as notas TRI já calculadas (NÃO recalcular!)
-      // IMPORTANTE: O ENEM calcula TRI separadamente por dia:
-      // - Dia 1: LC e CH (usando apenas os 90 itens do Dia 1)
-      // - Dia 2: CN e MT (usando apenas os 90 itens do Dia 2)
-      // Recalcular com 180 itens juntos DISTORCERIA as notas!
-      
-      console.log("[MERGE] Juntando notas TRI já calculadas (sem recalcular)...");
-      
-      // TRI scores do Dia 2 (estado atual - já calculados separadamente)
-      const triScoresDia2PorMatricula = new Map<string, Record<string, number>>();
-      alunosDia2Processados.forEach(aluno => {
-        const scores = triScoresByArea.get(aluno.id);
-        if (scores) {
-          triScoresDia2PorMatricula.set(aluno.studentNumber, { ...scores });
-          console.log("[MERGE] TRI Dia 2:", aluno.studentNumber, "CN:", scores.CN, "MT:", scores.MT);
-        }
-      });
-      
-      // TRI scores do Dia 1 (salvos no projeto - já calculados separadamente)
-      const triScoresDia1PorMatricula = new Map<string, Record<string, number>>();
-      const triScoresByAreaDia1 = projetoDia1.triScoresByArea || {};
-      projetoDia1.students.forEach((aluno: any) => {
-        const scores = triScoresByAreaDia1[aluno.id];
-        if (scores) {
-          triScoresDia1PorMatricula.set(aluno.studentNumber, { ...scores });
-          console.log("[MERGE] TRI Dia 1:", aluno.studentNumber, "LC:", scores.LC, "CH:", scores.CH);
-        }
+      // 5. RECALCULAR TRI automaticamente com os dados mesclados
+      console.log("[MERGE] Recalculando TRI com gabarito completo de 180 questões...");
+
+      // Preparar dados para o cálculo de TRI
+      // Converter alunosMesclados para o formato esperado por calculateTRIV2
+      const studentsParaTRI = alunosMesclados.map(aluno => ({
+        ...aluno,
+        areaCorrectAnswers: aluno.areaCorrectAnswers || {},
+      }));
+
+      // Chamar calculateTRIV2 diretamente com os dados mesclados
+      toast({
+        title: "🔄 Recalculando TRI...",
+        description: "Calculando notas das 4 áreas com gabarito completo...",
       });
 
-      // Juntar as 4 colunas TRI usando matrícula como ID
-      const finalTriScoresByAreaMap = new Map<string, Record<string, number>>();
-      const finalTriScoresMap = new Map<string, number>();
-      
-      alunosMesclados.forEach(aluno => {
-        const matricula = aluno.studentNumber;
-        const scoresDia1 = triScoresDia1PorMatricula.get(matricula) || {};
-        const scoresDia2 = triScoresDia2PorMatricula.get(matricula) || {};
-        
-        // Juntar: LC/CH do Dia 1 + CN/MT do Dia 2
-        const mergedScores: Record<string, number> = {
-          LC: aluno.fezDia1 ? (scoresDia1.LC || 0) : 0,
-          CH: aluno.fezDia1 ? (scoresDia1.CH || 0) : 0,
-          CN: aluno.fezDia2 ? (scoresDia2.CN || 0) : 0,
-          MT: aluno.fezDia2 ? (scoresDia2.MT || 0) : 0,
-        };
-        
-        finalTriScoresByAreaMap.set(aluno.id, mergedScores);
-        
-        // Média geral (apenas das áreas que o aluno fez)
-        const values = Object.values(mergedScores).filter(v => v > 0);
-        if (values.length > 0) {
-          const avg = values.reduce((a, b) => a + b, 0) / values.length;
-          finalTriScoresMap.set(aluno.id, avg);
+      // Declarar triResult fora do try para poder usar depois
+      let triResult: { triScoresMap: Map<string, number>; triScoresByAreaMap: Map<string, any>; studentsWithAreas?: any[] } | null = null;
+
+      try {
+        triResult = await calculateTRIV2(gabaritoCompleto, studentsParaTRI, "ENEM");
+
+        if (triResult) {
+          console.log("[MERGE] TRI recalculada com sucesso!");
+
+          // O calculateTRIV2 já atualiza os estados triScores, triScoresByArea, etc.
+          // Mas precisamos atualizar os alunosMesclados com os novos areaCorrectAnswers
+
+          // Atualizar alunosMesclados com os novos dados calculados
+          triResult.studentsWithAreas?.forEach((studentWithAreas: any) => {
+            const alunoIdx = alunosMesclados.findIndex(a => a.id === studentWithAreas.id);
+            if (alunoIdx >= 0) {
+              alunosMesclados[alunoIdx].areaCorrectAnswers = studentWithAreas.areaCorrectAnswers || alunosMesclados[alunoIdx].areaCorrectAnswers;
+            }
+          });
+
+          // Log dos resultados
+          alunosMesclados.forEach(aluno => {
+            const triByArea = triScoresByArea.get(aluno.id) || {};
+            const status = aluno.fezDia1 && aluno.fezDia2 ? "✅ Completo" :
+                           aluno.fezDia1 ? "⚠️ Só Dia 1" : "⚠️ Só Dia 2";
+            const acertos = aluno.areaCorrectAnswers || {};
+            console.log(`[MERGE] ${status} ${aluno.studentNumber} → Acertos: LC=${acertos.LC || 0} CH=${acertos.CH || 0} CN=${acertos.CN || 0} MT=${acertos.MT || 0}`);
+          });
         }
-        
-        const status = aluno.fezDia1 && aluno.fezDia2 ? "✅ Completo" :
-                       aluno.fezDia1 ? "⚠️ Só Dia 1" : "⚠️ Só Dia 2";
-        console.log(`[MERGE] ${status} ${matricula} → LC:${mergedScores.LC.toFixed(1)} CH:${mergedScores.CH.toFixed(1)} CN:${mergedScores.CN.toFixed(1)} MT:${mergedScores.MT.toFixed(1)}`);
-      });
+      } catch (triError) {
+        console.error("[MERGE] Erro ao recalcular TRI:", triError);
+        // Continua mesmo com erro - os dados mesclados ainda serão salvos
+      }
 
-      // Atualizar estados React
-      setTriScores(finalTriScoresMap);
-      setTriScoresByArea(finalTriScoresByAreaMap);
-      setTriScoresCount(finalTriScoresMap.size);
-      
-      console.log("[MERGE] Total alunos com TRI:", finalTriScoresMap.size);
+      console.log("[MERGE] Total alunos processados:", alunosMesclados.length);
 
-      // 7. Salvar projeto atualizado - USAR OS SCORES MESCLADOS (não os estados React)
+      // 7. Salvar projeto atualizado - USAR OS SCORES DO triResult (retornado pelo calculateTRIV2)
+      // Pegar os maps do resultado do cálculo TRI ou usar maps vazios se falhou
+      const triScoresMapFinal = triResult?.triScoresMap || new Map();
+      const triScoresByAreaMapFinal = triResult?.triScoresByAreaMap || new Map();
+
       const projetoAtualizado = {
         ...projetoDia1,
         nome: projetoDia1.nome.includes("+ Dia 2") ? projetoDia1.nome : `${projetoDia1.nome} + Dia 2`,
@@ -4280,8 +4309,8 @@ export default function Home() {
         answerKey: gabaritoCompleto,
         dia1Processado: true,
         dia2Processado: true,
-        triScores: Object.fromEntries(finalTriScoresMap),
-        triScoresByArea: Object.fromEntries(finalTriScoresByAreaMap),
+        triScores: Object.fromEntries(triScoresMapFinal),
+        triScoresByArea: Object.fromEntries(triScoresByAreaMapFinal),
       };
 
       const saveResp = await fetch(`/api/projetos/${idToUse}`, {
@@ -4299,10 +4328,30 @@ export default function Home() {
         setProjetoId(projetoIdParam);
       }
 
-      toast({
-        title: "🎉 Dia 1 + Dia 2 Mesclados!",
-        description: `${alunosMesclados.length} alunos com 180 questões. Notas TRI das 4 áreas preservadas.`,
-      });
+      // Mostrar toast de sucesso com alerta de alunos incompletos
+      const alunosCompletos = alunosMesclados.length - alunosSoDia1.length - alunosSoDia2.length;
+
+      if (alunosSoDia1.length > 0 || alunosSoDia2.length > 0) {
+        // Há alunos que não fizeram um dos dias - mostrar alerta
+        toast({
+          title: "⚠️ Merge Concluído com Alertas",
+          description: `${alunosCompletos} alunos completos. ${alunosSoDia1.length > 0 ? `${alunosSoDia1.length} só Dia 1. ` : ''}${alunosSoDia2.length > 0 ? `${alunosSoDia2.length} só Dia 2.` : ''} Verifique se são faltas reais ou erros de OCR.`,
+          variant: "destructive",
+        });
+
+        // Log detalhado para ajudar a identificar problemas
+        if (alunosSoDia1.length > 0) {
+          console.log("[MERGE] ⚠️ Alunos que SÓ fizeram Dia 1 (faltaram Dia 2 ou OCR errou):", alunosSoDia1.join(", "));
+        }
+        if (alunosSoDia2.length > 0) {
+          console.log("[MERGE] ⚠️ Alunos que SÓ fizeram Dia 2 (faltaram Dia 1 ou OCR errou):", alunosSoDia2.join(", "));
+        }
+      } else {
+        toast({
+          title: "🎉 Dia 1 + Dia 2 Mesclados!",
+          description: `${alunosMesclados.length} alunos com 180 questões. Notas TRI das 4 áreas preservadas.`,
+        });
+      }
 
     } catch (error: any) {
       console.error("[MERGE] Erro:", error);
@@ -6176,6 +6225,29 @@ export default function Home() {
                         >
                           Gerar Modelo
                         </Button>
+
+                        {/* Botão para importar gabarito via Excel/CSV */}
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          onChange={handleImportAnswerKey}
+                          className="hidden"
+                          id="import-answer-key"
+                          data-testid="input-import-answer-key"
+                        />
+                        <label htmlFor="import-answer-key">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="cursor-pointer"
+                          >
+                            <span>
+                              <FileSpreadsheet className="h-4 w-4 mr-1" />
+                              Importar Excel/CSV
+                            </span>
+                          </Button>
+                        </label>
                       </div>
                       
                       {/* MODO ESCOLA: Nome da Disciplina + Alternativas */}
@@ -8469,8 +8541,8 @@ export default function Home() {
                     </CardDescription>
                       </div>
                       <div className="flex gap-2">
-                        {/* Botão Recalcular TRI */}
-                        {answerKey.length > 0 && students.length > 0 && (
+                        {/* Botão Recalcular TRI - apenas para ESCOLA (ENEM recalcula automaticamente no merge) */}
+                        {appMode === "escola" && answerKey.length > 0 && students.length > 0 && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -8494,8 +8566,6 @@ export default function Home() {
                             )}
                           </Button>
                         )}
-
-
                       </div>
                     </div>
                   </CardHeader>
@@ -8669,10 +8739,10 @@ export default function Home() {
                                           <span className="font-semibold text-blue-600 dark:text-blue-400">
                                             {student.lc.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).lcAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).lcAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 1">N/F</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-center bg-blue-50/50 dark:bg-blue-950/50">
@@ -8681,10 +8751,10 @@ export default function Home() {
                                           <span className="font-semibold text-blue-600 dark:text-blue-400">
                                             {student.ch.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).chAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).chAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 1">N/F</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-center bg-blue-50/50 dark:bg-blue-950/50">
@@ -8693,10 +8763,10 @@ export default function Home() {
                                           <span className="font-semibold text-blue-600 dark:text-blue-400">
                                             {student.cn.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).cnAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).cnAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 2">N/F</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-center bg-blue-50/50 dark:bg-blue-950/50">
@@ -8705,10 +8775,10 @@ export default function Home() {
                                           <span className="font-semibold text-blue-600 dark:text-blue-400">
                                             {student.mt.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).mtAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).mtAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 2">N/F</span>
                                       )}
                                     </TableCell>
 
@@ -8719,10 +8789,10 @@ export default function Home() {
                                           <span className="font-semibold text-purple-600 dark:text-purple-400">
                                             {student.triLc.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).lcAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).lcAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 1">N/F</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-center bg-purple-50/50 dark:bg-purple-950/50">
@@ -8731,10 +8801,10 @@ export default function Home() {
                                           <span className="font-semibold text-purple-600 dark:text-purple-400">
                                             {student.triCh.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).chAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).chAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 1">N/F</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-center bg-purple-50/50 dark:bg-purple-950/50">
@@ -8743,10 +8813,10 @@ export default function Home() {
                                           <span className="font-semibold text-purple-600 dark:text-purple-400">
                                             {student.triCn.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).cnAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).cnAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 2">N/F</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-center bg-purple-50/50 dark:bg-purple-950/50">
@@ -8755,10 +8825,10 @@ export default function Home() {
                                           <span className="font-semibold text-purple-600 dark:text-purple-400">
                                             {student.triMt.toFixed(1)}
                                           </span>
-                                          <span className="text-xs text-muted-foreground">{(student as any).mtAcertos || 0} acertos</span>
+                                          <span className="text-xs text-muted-foreground">{(student as any).mtAcertos ?? 0} acertos</span>
                                         </div>
                                       ) : (
-                                        <span className="text-muted-foreground text-sm">N/A</span>
+                                        <span className="text-orange-500 text-sm font-medium" title="Não fez o Dia 2">N/F</span>
                                       )}
                                 </TableCell>
                               </TableRow>
@@ -10617,7 +10687,7 @@ export default function Home() {
                       <CardHeader>
                         <CardTitle className="text-base">Análise por Questão</CardTitle>
                         <CardDescription>
-                          Porcentagem de acertos e conteúdo de cada questão
+                          Passe o mouse para ver distribuição de respostas
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -10657,21 +10727,47 @@ export default function Home() {
                                   })()}
                                 </div>
                               </TooltipTrigger>
-                              <TooltipContent className="max-w-xs">
-                                <p className="font-medium">Questão {stat.questionNumber}</p>
+                              <TooltipContent className="max-w-xs p-3">
+                                <p className="font-bold mb-1">Questão {stat.questionNumber} - Gabarito: {stat.correctAnswer}</p>
                                 {(() => {
                                   const questionContent = questionContents.find(qc => qc.questionNumber === stat.questionNumber);
                                   const content = stat.content || questionContent?.content || "";
                                   return content ? (
-                                    <p className="text-sm mt-1 font-semibold text-blue-600 dark:text-blue-400">{content}</p>
+                                    <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">{content}</p>
                                   ) : null;
                                 })()}
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  Acertos: {stat.correctPercentage}% ({stat.correctCount}/{statistics.totalStudents})
+                                <p className="text-sm">
+                                  <span className={`font-medium ${stat.correctPercentage >= 70 ? "text-green-600" : stat.correctPercentage >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                                    {stat.correctPercentage >= 70 ? "Fácil" : stat.correctPercentage >= 40 ? "Médio" : "Difícil"}
+                                  </span>
+                                  {" "}• {stat.correctCount}/{statistics.totalStudents} acertos ({stat.correctPercentage}%)
                                 </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Erros: {stat.wrongCount} ({Math.round((stat.wrongCount / statistics.totalStudents) * 100)}%)
-                                </p>
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-xs font-medium">Distribuição:</p>
+                                  {["A", "B", "C", "D", "E"].map(letra => {
+                                    const count = stat.distribution?.[letra] || 0;
+                                    const percent = statistics.totalStudents > 0 ? (count / statistics.totalStudents) * 100 : 0;
+                                    const isCorrect = letra === stat.correctAnswer;
+                                    return (
+                                      <div key={letra} className="flex items-center gap-2 text-xs">
+                                        <span className={`w-4 font-bold ${isCorrect ? "text-green-600" : ""}`}>{letra}:</span>
+                                        <div className="flex-1 h-2 bg-gray-200 rounded overflow-hidden">
+                                          <div
+                                            className={`h-full ${isCorrect ? "bg-green-500" : "bg-gray-400"}`}
+                                            style={{ width: `${percent}%` }}
+                                          />
+                                        </div>
+                                        <span className="w-16 text-right">{count} ({percent.toFixed(0)}%)</span>
+                                      </div>
+                                    );
+                                  })}
+                                  {(stat.blankCount || 0) > 0 && (
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <span className="w-4">?:</span>
+                                      <span>{stat.blankCount} em branco ({((stat.blankCount / statistics.totalStudents) * 100).toFixed(0)}%)</span>
+                                    </div>
+                                  )}
+                                </div>
                               </TooltipContent>
                             </Tooltip>
                           ))}
