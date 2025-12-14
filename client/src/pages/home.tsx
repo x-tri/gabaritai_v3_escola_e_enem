@@ -6226,28 +6226,32 @@ export default function Home() {
                           Gerar Modelo
                         </Button>
 
-                        {/* Botão para importar gabarito via Excel/CSV */}
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls,.csv"
-                          onChange={handleImportAnswerKey}
-                          className="hidden"
-                          id="import-answer-key"
-                          data-testid="input-import-answer-key"
-                        />
-                        <label htmlFor="import-answer-key">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                            className="cursor-pointer"
-                          >
-                            <span>
-                              <FileSpreadsheet className="h-4 w-4 mr-1" />
-                              Importar Excel/CSV
-                            </span>
-                          </Button>
-                        </label>
+                        {/* Botão para importar gabarito via Excel/CSV - APENAS ENEM (180 questões) */}
+                        {appMode === "enem" && (
+                          <>
+                            <input
+                              type="file"
+                              accept=".xlsx,.xls,.csv"
+                              onChange={handleImportAnswerKey}
+                              className="hidden"
+                              id="import-answer-key"
+                              data-testid="input-import-answer-key"
+                            />
+                            <label htmlFor="import-answer-key">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                asChild
+                                className="cursor-pointer"
+                              >
+                                <span>
+                                  <FileSpreadsheet className="h-4 w-4 mr-1" />
+                                  Importar Excel/CSV
+                                </span>
+                              </Button>
+                            </label>
+                          </>
+                        )}
                       </div>
                       
                       {/* MODO ESCOLA: Nome da Disciplina + Alternativas */}
