@@ -1,0 +1,157 @@
+================================================================================
+                    PASSO A PASSO - RODAR GABARITAI
+================================================================================
+
+PASSO 1
+───────
+Abra o Terminal (macOS/Linux) ou PowerShell (Windows)
+
+macOS:    Pressione Cmd + Space, digite "terminal", pressione Enter
+Linux:    Pressione Ctrl + Alt + T
+Windows:  Procure por "PowerShell" e abra
+
+
+PASSO 2
+───────
+Cole EXATAMENTE isto no terminal:
+
+    cd "/Volumes/notebook/gabaritAI 2" && bash run.sh
+
+Depois pressione ENTER
+
+
+PASSO 3
+───────
+Você verá isto:
+
+    ╔════════════════════════════════════════════════════╗
+    ║    GabaritAI - Inicialização Automática           ║
+    ╚════════════════════════════════════════════════════╝
+
+    1. Verificando Node.js...
+    ✓ Node.js v18.x.x
+
+    2. Verificando npm...
+    ✓ npm 9.x.x
+
+    ... [vai ficar instalando por 3-5 minutos] ...
+
+
+PASSO 4
+───────
+Quando terminar, você verá ISTO (procure por esta mensagem):
+
+    ✓ TUDO PRONTO!
+
+    Iniciando servidor...
+    URL: http://localhost:8080
+    Pressione Ctrl+C para parar
+
+
+PASSO 5
+───────
+Abra seu navegador (Chrome, Firefox, Safari, Edge)
+
+Na barra de endereço, digite:
+
+    http://localhost:8080
+
+E pressione ENTER
+
+
+PASSO 6
+───────
+Você deve ver a interface do GabaritAI!
+
+Toque em: "Cadastrar Gabarito"
+
+
+PASSO 7
+───────
+Você verá uma seção azul que diz: "Provas Personalizadas"
+
+Clique no botão azul: "Nova Prova"
+
+
+PASSO 8
+───────
+Preencha o formulário:
+
+    Nome: Teste
+    Total de Questões: 30
+    Alternativas: 5 (já vem selecionado)
+    Nota Máxima: 10.0 (já vem preenchido)
+
+
+PASSO 9
+───────
+Role para baixo até ver "Divisão por Disciplinas"
+
+Clique em: "Adicionar Disciplina"
+
+Você verá 3 disciplinas sendo criadas automaticamente
+
+
+PASSO 10
+────────
+Role para baixo até o final
+
+Clique no botão azul: "Salvar Configuração"
+
+
+PASSO 11
+────────
+Se aparecer uma mensagem verde dizendo:
+
+    Sucesso! Configuração "Teste" criada com sucesso!
+
+================================================================================
+                         PARABÉNS! FUNCIONOU!
+================================================================================
+
+Se NÃO vir a mensagem verde, vá para o final deste arquivo.
+
+
+ERRO? LEIA ABAIXO
+================================================================================
+
+ERRO: "bash: run.sh: No such file or directory"
+  → O arquivo run.sh não existe
+  → Tente: cd "/Volumes/notebook/gabaritAI 2" && python3 setup.py
+
+ERRO: "Node.js não encontrado" ou "npm not found"
+  → Instale Node.js em: https://nodejs.org
+  → Clique em "LTS"
+  → Siga o instalador
+  → Abra um novo Terminal
+  → Tente novamente
+
+ERRO: "ENOENT: no such file or directory"
+  → npm install não completou
+  → Tente: npm install --legacy-peer-deps
+
+ERRO: "Port 8080 already in use"
+  → Outra instância está rodando
+  → Feche TODAS as outras abas/janelas do terminal
+  → Ou mude a porta em: server/index.ts (linha 88)
+
+ERRO: Outro qualquer
+  → Copie TODO o texto do erro
+  → Abra o arquivo: TROUBLESHOOTING.md
+  → Procure pelo seu erro
+
+================================================================================
+
+RESUMO DO QUE ACONTECE:
+  1. Terminal abre
+  2. Você cola: cd "/Volumes/notebook/gabaritAI 2" && bash run.sh
+  3. Script instala dependências (npm install)
+  4. Servidor inicia em http://localhost:8080
+  5. Navegador abre a interface
+  6. Você testa criando uma prova
+  7. ✓ SUCESSO!
+
+TEMPO TOTAL: 5-10 minutos
+DIFICULDADE: Muito fácil (só colar um comando)
+
+================================================================================
