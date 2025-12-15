@@ -4461,8 +4461,12 @@ export default function Home() {
     }>();
 
     // Processar cada prova
-    projetoEscolaAtual.provas.forEach(prova => {
-      prova.resultados.forEach(resultado => {
+    projetoEscolaAtual.provas.forEach((prova, provaIdx) => {
+      console.log(`[CONSOLIDADO] Prova ${provaIdx}: ${prova.disciplina}, ${prova.resultados.length} resultados`);
+      prova.resultados.forEach((resultado, idx) => {
+        if (idx < 2) {  // Log only first 2 students per prova
+          console.log(`[CONSOLIDADO] Resultado ${idx}: Aluno ${resultado.alunoId}, TCT=${resultado.notaTCT}, TRI=${resultado.notaTRI}`);
+        }
         if (!alunosComNotas.has(resultado.alunoId)) {
           alunosComNotas.set(resultado.alunoId, {
             id: resultado.alunoId,
@@ -4736,10 +4740,12 @@ export default function Home() {
           dificuldadeQuestoes
         );
 
-        triScoresMap.set(aluno.id, triScore);
-        triScoresByAreaMap.set(aluno.id, { GERAL: triScore });
+        // Garantir que a chave é uma string limpa
+        const alunoKey = String(aluno.id).trim();
+        triScoresMap.set(alunoKey, triScore);
+        triScoresByAreaMap.set(alunoKey, { GERAL: triScore });
 
-        console.log(`[TRI ESCOLA] ${aluno.nome}: ${acertos}/${totalQuestoes} → TRI = ${triScore}`);
+        console.log(`[TRI ESCOLA] Aluno: "${aluno.nome}" (key="${alunoKey}"): ${acertos}/${totalQuestoes} → TRI = ${triScore}`);
       });
 
       // Atualizar estados
@@ -4754,12 +4760,16 @@ export default function Home() {
 
         // Atualizar resultados da prova com as notas TRI
         const resultadosAtualizados = provaSelecionada.resultados.map(resultado => {
-          const triScore = triScoresMap.get(resultado.alunoId) || 0;
+          const alunoKey = String(resultado.alunoId).trim();
+          const triScore = triScoresMap.get(alunoKey) || 0;
+          console.log(`[TRI SAVE DEBUG] Aluno "${resultado.nome}" (key="${alunoKey}"): TRI = ${triScore}, triScoresMap.has = ${triScoresMap.has(alunoKey)}`);
           return {
             ...resultado,
             notaTRI: parseFloat(triScore.toFixed(2)),
           };
         });
+
+        console.log('[TRI SAVE DEBUG] Resultados atualizados:', resultadosAtualizados.slice(0, 3).map(r => ({ id: r.alunoId, tri: r.notaTRI })));
 
         // Atualizar a prova no projeto
         const provasAtualizadas = projetoEscolaAtual.provas.map((p, idx) =>
@@ -4783,6 +4793,7 @@ export default function Home() {
         setProjetoEscolaAtual(projetoAtualizado);
 
         console.log('[TRI ESCOLA] Resultados TRI salvos na prova:', provaSelecionada.disciplina);
+        console.log('[TRI ESCOLA] Novo estado do projeto:', projetoAtualizado.provas[provaIdx].resultados.slice(0, 3).map(r => ({ id: r.alunoId, tri: r.notaTRI })));
       }
 
       // AUTO-SALVAR no projeto escola se estiver processando uma NOVA prova (não uma prova já salva)
@@ -4802,10 +4813,10 @@ export default function Home() {
           }
           const notaTCT = (acertos / totalQuestoes) * 10;
           // IMPORTANTE: Usar a mesma chave que foi usada para armazenar no triScoresMap
-          const alunoKey = student.studentNumber || student.id;
+          const alunoKey = String(student.studentNumber || student.id).trim();
           const triScore = triScoresMap.get(alunoKey) || 0;
 
-          console.log(`[TRI SAVE] ${student.studentName}: key=${alunoKey}, TRI=${triScore}`);
+          console.log(`[TRI SAVE] "${student.studentName}" (key="${alunoKey}"): TRI=${triScore}`);
 
           return {
             alunoId: student.studentNumber || student.id,
@@ -8559,7 +8570,7 @@ export default function Home() {
                                             <span className={`font-semibold ${nota.tct >= (prova.notaMaxima * 0.6) ? 'text-green-600' : 'text-red-600'}`}>
                                               {nota.tct.toFixed(1)}
                                             </span>
-                                            {nota.tri && (
+                                            {nota.tri !== undefined && nota.tri !== null && (
                                               <span className="text-xs font-medium text-purple-600 dark:text-purple-400">
                                                 TRI: {nota.tri.toFixed(2)}
                                               </span>
