@@ -2726,14 +2726,40 @@ export default function Home() {
       return;
     }
 
-    // 🔒 REGRA DE OURO: Em modo ESCOLA, NÃO PODE salvar no servidor (API ENEM)!
+    // 🔒 REGRA DE OURO: Em modo ESCOLA, salvar localmente (não no servidor)!
     if (appMode === "escola") {
-      toast({
-        title: "❌ Modo Incorreto",
-        description: "Em modo ESCOLA, o projeto é salvo automaticamente. Não use esta função!",
-        variant: "destructive",
-      });
-      return;
+      if (projetoEscolaAtual) {
+        // Atualizar nome do projeto se o usuário quiser renomear
+        const projetoRenomeado = {
+          ...projetoEscolaAtual,
+          nome: nome.trim(),
+          updatedAt: new Date().toISOString()
+        };
+
+        const projetosAtualizados = projetosEscolaSalvos.map(p =>
+          p.id === projetoRenomeado.id ? projetoRenomeado : p
+        );
+
+        localStorage.setItem("projetosEscola", JSON.stringify(projetosAtualizados));
+        setProjetosEscolaSalvos(projetosAtualizados);
+        setProjetoEscolaAtual(projetoRenomeado);
+
+        toast({
+          title: "Projeto renomeado!",
+          description: `"${nome}" foi salvo com sucesso.`,
+        });
+
+        setProjetoNome("");
+        setProjetoSaveDialogOpen(false);
+        return;
+      } else {
+        toast({
+          title: "Nenhum projeto ativo",
+          description: "Crie ou carregue um projeto primeiro.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     try {
@@ -4910,9 +4936,11 @@ export default function Home() {
         // Selecionar a nova prova automaticamente
         setProvaEscolaSelecionadaIndex(projetoAtualizado.provas.length - 1);
 
-        // Limpar campos para próxima prova
+        // Limpar campos para próxima prova (CRÍTICO: limpar tudo para evitar re-cálculo acidental)
         setDisciplinaAtual("");
         setAbreviacaoAtual("");
+        setStudents([]);  // Limpar dados dos alunos
+        setAnswerKey([]);  // Limpar gabarito
 
         // Fechar dialogs que possam estar abertos
         setEditAnswersDialogOpen(false);
@@ -8539,15 +8567,26 @@ export default function Home() {
                               {dadosConsolidadosProjeto.totalAlunos} alunos • {dadosConsolidadosProjeto.totalProvas} provas
                             </p>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleExportBoletimExcel}
-                            className="bg-gradient-to-r from-green-500 to-emerald-500 text-white border-0 hover:from-green-600 hover:to-emerald-600"
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            Exportar Boletim
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setProjetoSaveDialogOpen(true)}
+                              className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white border-0 hover:from-blue-600 hover:to-cyan-600"
+                            >
+                              <Save className="h-4 w-4 mr-2" />
+                              Renomear
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleExportBoletimExcel}
+                              className="bg-gradient-to-r from-green-500 to-emerald-500 text-white border-0 hover:from-green-600 hover:to-emerald-600"
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Exportar Boletim
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="overflow-x-auto border rounded-lg">
@@ -12732,6 +12771,9 @@ export default function Home() {
                         <p className="text-xs text-muted-foreground">
                           {proj.provas.length} prova(s) • {proj.alunosUnicos.length} aluno(s)
                           {proj.provas.length > 0 && ` • ${proj.provas.map(p => p.abreviacao).join(", ")}`}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          💾 Salvo: {new Date(proj.updatedAt).toLocaleString('pt-BR')}
                         </p>
                       </div>
                       <div className="flex gap-2">
