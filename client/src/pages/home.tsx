@@ -4971,56 +4971,79 @@ export default function Home() {
       return;
     }
 
-    setAnswerKeyDialogOpen(false);
-    
+    // Não fechar o dialog ainda - vamos esperar o resultado do cálculo TRI
+    // O dialog será fechado APÓS o sucesso ou error
+
     toast({
       title: "Calculando TRI V2",
       description: "Enviando dados para o serviço Python de coerência pedagógica...",
     });
 
-    const triV2Result = await calculateTRIV2(finalAnswerKey, studentsWithScores, selectedTemplate.name);
+    try {
+      const triV2Result = await calculateTRIV2(finalAnswerKey, studentsWithScores, selectedTemplate.name);
 
-    if (!triV2Result) {
-      toast({
-        title: "Erro ao calcular TRI V2",
-        description: "Serviço TRI V2 indisponível. Tente novamente ou verifique o servidor da TRI.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const { triScoresMap, triScoresByAreaMap } = triV2Result;
-
-    if (triScoresMap.size === 0) {
-      toast({
-        title: "Nenhum resultado TRI",
-        description: "O TRI V2 não retornou notas. Verifique se há alunos com respostas válidas.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setTriScores(new Map(triScoresMap));
-    setTriScoresByArea(new Map(triScoresByAreaMap));
-    setTriScoresCount(triScoresMap.size);
-
-    setStudents(prev => prev.map(student => {
-      const triScore = triScoresMap.get(student.id);
-      if (triScore !== undefined) {
-        return {
-          ...student,
-          triScore,
-        };
+      if (!triV2Result) {
+        toast({
+          title: "Erro ao calcular TRI V2",
+          description: "Serviço TRI V2 indisponível. Tente novamente ou verifique o servidor da TRI.",
+          variant: "destructive",
+        });
+        return;
       }
-      return student;
-    }));
 
-    toast({
-      title: "TRI V2 calculado",
-      description: `${triScoresMap.size} aluno(s) processados com sucesso.`,
-    });
-    
-    setTimeout(() => setMainActiveTab("tri"), 150);
+      // Cálculo bem-sucedido - agora fechamos o dialog
+      setAnswerKeyDialogOpen(false);
+    } catch (error: any) {
+      console.error("[TRI] Erro capturado em handleCalculateTRI:", error);
+      toast({
+        title: "Erro ao calcular TRI",
+        description: error?.message || "Erro desconhecido durante o cálculo TRI",
+        variant: "destructive",
+      });
+      return;
+    }
+
+      const { triScoresMap, triScoresByAreaMap } = triV2Result;
+
+      if (triScoresMap.size === 0) {
+        toast({
+          title: "Nenhum resultado TRI",
+          description: "O TRI V2 não retornou notas. Verifique se há alunos com respostas válidas.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setTriScores(new Map(triScoresMap));
+      setTriScoresByArea(new Map(triScoresByAreaMap));
+      setTriScoresCount(triScoresMap.size);
+
+      setStudents(prev => prev.map(student => {
+        const triScore = triScoresMap.get(student.id);
+        if (triScore !== undefined) {
+          return {
+            ...student,
+            triScore,
+          };
+        }
+        return student;
+      }));
+
+      toast({
+        title: "TRI V2 calculado",
+        description: `${triScoresMap.size} aluno(s) processados com sucesso.`,
+      });
+
+      setTimeout(() => setMainActiveTab("tri"), 150);
+    } catch (error: any) {
+      // Captura erros não previstos na lógica de ENEM
+      console.error("[TRI ENEM] Erro não tratado:", error);
+      toast({
+        title: "Erro inesperado",
+        description: error?.message || "Erro desconhecido ao processar TRI",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleGenerateEmptyAnswerKey = () => {
