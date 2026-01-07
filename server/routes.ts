@@ -31,6 +31,13 @@ const PYTHON_TRI_SERVICE_URL = process.env.PYTHON_TRI_URL || "http://localhost:5
 const USE_PYTHON_OMR = process.env.USE_PYTHON_OMR !== "false"; // Ativado por padrão
 const USE_PYTHON_TRI = process.env.USE_PYTHON_TRI !== "false"; // Ativado por padrão
 
+// Log de configuração na inicialização
+console.log(`[CONFIG] 🔧 Configuração dos serviços Python:`);
+console.log(`[CONFIG]   - PYTHON_OMR_URL: ${PYTHON_OMR_SERVICE_URL}`);
+console.log(`[CONFIG]   - PYTHON_TRI_URL: ${PYTHON_TRI_SERVICE_URL}`);
+console.log(`[CONFIG]   - USE_PYTHON_OMR: ${USE_PYTHON_OMR}`);
+console.log(`[CONFIG]   - USE_PYTHON_TRI: ${USE_PYTHON_TRI}`);
+
 /**
  * Chama o serviço Python OMR para processar uma imagem
  * @param imageBuffer Buffer da imagem PNG
@@ -84,11 +91,21 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
 
     return response.data;
   } catch (error: any) {
-    console.error(`[Python OMR] Erro ao chamar serviço:`, error);
+    console.error(`[Python OMR] ❌ ERRO ao chamar serviço em ${PYTHON_OMR_SERVICE_URL}:`, error.message || error);
+    console.error(`[Python OMR] Código:`, error.code || 'N/A');
+    console.error(`[Python OMR] URL tentada:`, `${PYTHON_OMR_SERVICE_URL}/api/process-image`);
     if (error.response) {
+      console.error(`[Python OMR] Response status:`, error.response.status);
+      console.error(`[Python OMR] Response data:`, JSON.stringify(error.response.data));
       throw new Error(`Serviço Python OMR retornou erro ${error.response.status}: ${JSON.stringify(error.response.data)}`);
     }
-    throw error;
+    if (error.code === 'ECONNREFUSED') {
+      throw new Error(`Conexão recusada pelo OMR em ${PYTHON_OMR_SERVICE_URL}. Verifique se o serviço está rodando.`);
+    }
+    if (error.code === 'ENOTFOUND') {
+      throw new Error(`Host não encontrado: ${PYTHON_OMR_SERVICE_URL}. Verifique a URL.`);
+    }
+    throw new Error(`Erro de conexão com OMR: ${error.message || error}`);
   }
 }
 
@@ -861,8 +878,10 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           }
         };
       } catch (pageError) {
-        console.error(`[JOB ${jobId}] Erro página ${pageNumber}:`, pageError);
-        return { student: null, warnings: [`Erro na página ${pageNumber}`], pageResult: null };
+        const errorMsg = pageError instanceof Error ? pageError.message : String(pageError);
+        console.error(`[JOB ${jobId}] ❌ ERRO DETALHADO página ${pageNumber}:`, errorMsg);
+        console.error(`[JOB ${jobId}] Stack:`, pageError instanceof Error ? pageError.stack : 'N/A');
+        return { student: null, warnings: [`Erro na página ${pageNumber}: ${errorMsg}`], pageResult: null };
       }
     };
 

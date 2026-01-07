@@ -47,7 +47,7 @@ RUN npx tsx script/build-server.ts
 # -----------------------------------------------------------------------------
 FROM node:20-slim AS runner
 
-# Instalar dependências runtime para canvas/sharp
+# Instalar dependências runtime para canvas/sharp e poppler para PDF->PNG
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -60,6 +60,7 @@ RUN apt-get update && apt-get install -y \
     librsvg2-dev \
     libpixman-1-dev \
     wget \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
