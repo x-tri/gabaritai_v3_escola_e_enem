@@ -4225,12 +4225,52 @@ export default function Home() {
           MT: alunoDia2?.areaScores?.MT || 0,
         };
         
-        // Mesclar areaCorrectAnswers (acertos)
+        // CORREÇÃO CRÍTICA: Calcular CN/MT diretamente das respostas do Dia 2
+        // O estado `students` não tem areaCorrectAnswers calculados, então precisamos calcular aqui
+        // Dia 2: respostasDia2[0-44] = CN (Q91-135), respostasDia2[45-89] = MT (Q136-180)
+        // Gabarito: gabaritoCompleto[90-134] = CN, gabaritoCompleto[135-179] = MT
+
+        // Calcular LC e CH do Dia 1
+        let lcAcertos = 0;
+        let chAcertos = 0;
+        if (alunoDia1) {
+          // LC: Q1-45 = respostasDia1[0-44] vs gabaritoCompleto[0-44]
+          for (let i = 0; i < 45; i++) {
+            const resp = String(respostasDia1[i] || "").toUpperCase().trim();
+            const gab = String(gabaritoCompleto[i] || "").toUpperCase().trim();
+            if (resp && gab && resp === gab) lcAcertos++;
+          }
+          // CH: Q46-90 = respostasDia1[45-89] vs gabaritoCompleto[45-89]
+          for (let i = 45; i < 90; i++) {
+            const resp = String(respostasDia1[i] || "").toUpperCase().trim();
+            const gab = String(gabaritoCompleto[i] || "").toUpperCase().trim();
+            if (resp && gab && resp === gab) chAcertos++;
+          }
+        }
+
+        // Calcular CN e MT do Dia 2
+        let cnAcertos = 0;
+        let mtAcertos = 0;
+        if (alunoDia2) {
+          // CN: Q91-135 = respostasDia2[0-44] vs gabaritoCompleto[90-134]
+          for (let i = 0; i < 45; i++) {
+            const resp = String(respostasDia2[i] || "").toUpperCase().trim();
+            const gab = String(gabaritoCompleto[90 + i] || "").toUpperCase().trim();
+            if (resp && gab && resp === gab) cnAcertos++;
+          }
+          // MT: Q136-180 = respostasDia2[45-89] vs gabaritoCompleto[135-179]
+          for (let i = 45; i < 90; i++) {
+            const resp = String(respostasDia2[i] || "").toUpperCase().trim();
+            const gab = String(gabaritoCompleto[135 + (i - 45)] || "").toUpperCase().trim();
+            if (resp && gab && resp === gab) mtAcertos++;
+          }
+        }
+
         const areaCorrectAnswersMesclados = {
-          LC: alunoDia1?.areaCorrectAnswers?.LC || 0,
-          CH: alunoDia1?.areaCorrectAnswers?.CH || 0,
-          CN: alunoDia2?.areaCorrectAnswers?.CN || 0,
-          MT: alunoDia2?.areaCorrectAnswers?.MT || 0,
+          LC: lcAcertos,
+          CH: chAcertos,
+          CN: cnAcertos,
+          MT: mtAcertos,
         };
         
         // Determinar qual objeto base usar (prioridade para quem tem mais dados)
