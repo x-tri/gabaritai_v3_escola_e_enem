@@ -26,8 +26,8 @@ const allowedOrigins = [
   "https://xtri-gabaritos.vercel.app",
   "https://gabaritai-livid.vercel.app",
   // Production - Custom domain
-  "https://xtrigabarito.app",
-  "https://www.xtrigabarito.app",
+  "https://xtri-gabarito.app",
+  "https://www.xtri-gabarito.app",
   // Custom domain from environment
   process.env.FRONTEND_URL,
 ].filter(Boolean) as string[];
