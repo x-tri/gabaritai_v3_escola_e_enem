@@ -4835,5 +4835,99 @@ Para cada disciplina:
     }
   });
 
+  // ===========================================================================
+  // ESCOLA ENDPOINTS - Para school_admin (coordenadores)
+  // ===========================================================================
+
+  // GET /api/escola/results - Buscar resultados dos alunos da escola
+  app.get("/api/escola/results", async (req: Request, res: Response) => {
+    try {
+      // Por enquanto, retorna todos os resultados (após implementar auth, filtrar por school_id)
+      // Em produção: extrair school_id do token JWT e filtrar
+
+      // Buscar student_answers com info do exame
+      const { data: answers, error: answersError } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          score,
+          correct_answers,
+          wrong_answers,
+          blank_answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          created_at,
+          exams(title)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (answersError) {
+        console.error("[ESCOLA] Erro ao buscar resultados:", answersError);
+        return res.status(500).json({ error: answersError.message });
+      }
+
+      // Formatar resultados
+      const results = (answers || []).map((a: any) => ({
+        id: a.id,
+        student_name: a.student_name,
+        student_number: a.student_number,
+        turma: a.turma,
+        score: a.score,
+        correct_answers: a.correct_answers,
+        wrong_answers: a.wrong_answers,
+        blank_answers: a.blank_answers,
+        tri_lc: a.tri_lc,
+        tri_ch: a.tri_ch,
+        tri_cn: a.tri_cn,
+        tri_mt: a.tri_mt,
+        exam_title: a.exams?.title || "Prova sem título",
+        created_at: a.created_at,
+      }));
+
+      // Calcular estatísticas
+      const turmasSet = new Set<string>();
+      let totalScore = 0;
+      let scoreCount = 0;
+
+      results.forEach((r: any) => {
+        if (r.turma) turmasSet.add(r.turma);
+        if (r.score != null) {
+          totalScore += r.score;
+          scoreCount++;
+        }
+      });
+
+      // Buscar total de alunos únicos
+      const uniqueStudents = new Set(results.map((r: any) => r.student_number || r.student_name));
+
+      // Buscar total de provas
+      const { count: examCount } = await supabaseAdmin
+        .from("exams")
+        .select("*", { count: "exact", head: true });
+
+      const stats = {
+        totalStudents: uniqueStudents.size,
+        totalExams: examCount || 0,
+        averageScore: scoreCount > 0 ? totalScore / scoreCount : 0,
+        turmas: Array.from(turmasSet).sort(),
+      };
+
+      res.json({ results, stats });
+
+    } catch (error: any) {
+      console.error("[ESCOLA] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao buscar dados da escola",
+        details: error.message
+      });
+    }
+  });
+
   return httpServer;
 }

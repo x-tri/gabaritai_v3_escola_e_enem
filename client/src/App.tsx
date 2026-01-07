@@ -11,6 +11,7 @@ import LoginPage from "@/pages/login";
 import SignupPage from "@/pages/signup";
 import StudentDashboard from "@/pages/student-dashboard";
 import AdminPage from "@/pages/admin";
+import EscolaPage from "@/pages/escola";
 import UnauthorizedPage from "@/pages/unauthorized";
 import DebugPage from "@/pages/debug";
 import NotFound from "@/pages/not-found";
@@ -23,17 +24,24 @@ function Router() {
       <Route path="/signup" component={SignupPage} />
       <Route path="/unauthorized" component={UnauthorizedPage} />
 
-      {/* Rota protegida - Admin/Teacher */}
+      {/* Rota protegida - SUPER_ADMIN (Xandão/XTRI) */}
       <Route path="/">
-        <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+        <ProtectedRoute allowedRoles={['super_admin']}>
           <Home />
         </ProtectedRoute>
       </Route>
 
-      {/* Rota protegida - Admin */}
+      {/* Rota protegida - Admin panel */}
       <Route path="/admin">
-        <ProtectedRoute allowedRoles={['admin', 'teacher']}>
+        <ProtectedRoute allowedRoles={['super_admin']}>
           <AdminPage />
+        </ProtectedRoute>
+      </Route>
+
+      {/* Rota protegida - SCHOOL_ADMIN (Coordenador/Diretor) */}
+      <Route path="/escola">
+        <ProtectedRoute allowedRoles={['school_admin']}>
+          <EscolaPage />
         </ProtectedRoute>
       </Route>
 

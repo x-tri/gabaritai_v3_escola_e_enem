@@ -19,7 +19,7 @@ export default function SignupPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    role: '' as 'admin' | 'teacher' | 'student' | '',
+    role: '' as 'super_admin' | 'school_admin' | 'student' | '',
     studentNumber: '',
     turma: '',
   });
@@ -105,7 +105,7 @@ export default function SignupPage() {
               <Label htmlFor="role">Perfil</Label>
               <Select
                 value={form.role}
-                onValueChange={(value: 'admin' | 'teacher' | 'student') =>
+                onValueChange={(value: 'school_admin' | 'student') =>
                   setForm({ ...form, role: value })
                 }
               >
@@ -113,7 +113,7 @@ export default function SignupPage() {
                   <SelectValue placeholder="Selecione seu perfil" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="teacher">Professor / Coordenador</SelectItem>
+                  <SelectItem value="school_admin">Coordenador / Diretor</SelectItem>
                   <SelectItem value="student">Aluno</SelectItem>
                 </SelectContent>
               </Select>

@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'teacher' | 'student';
+export type UserRole = 'super_admin' | 'school_admin' | 'student';
 export type ExamStatus = 'draft' | 'active' | 'closed';
 
 export interface School {

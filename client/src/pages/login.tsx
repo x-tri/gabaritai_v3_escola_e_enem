@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -7,17 +7,41 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, User, Mail } from 'lucide-react';
+import type { UserRole } from '@shared/database.types';
+
+// Mapeamento de roles para rotas
+function getRedirectByRole(role: UserRole): string {
+  switch (role) {
+    case 'super_admin':
+      return '/';
+    case 'school_admin':
+      return '/escola';
+    case 'student':
+      return '/dashboard';
+    default:
+      return '/';
+  }
+}
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
-  const { signIn } = useAuth();
+  const { signIn, profile, user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [identifier, setIdentifier] = useState(''); // Matrícula ou Email
   const [password, setPassword] = useState('');
+  const [loginSuccess, setLoginSuccess] = useState(false);
 
   // Detecta se é email (contém @) ou matrícula
   const isEmail = identifier.includes('@');
+
+  // Redirecionar quando profile carregar após login
+  useEffect(() => {
+    if (loginSuccess && profile) {
+      const redirectPath = getRedirectByRole(profile.role);
+      setLocation(redirectPath);
+    }
+  }, [loginSuccess, profile, setLocation]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +97,8 @@ export default function LoginPage() {
       setLoading(false);
     } else {
       toast({ title: 'Bem-vindo!' });
-      setLocation('/');
+      setLoginSuccess(true);
+      // O useEffect acima vai redirecionar quando o profile carregar
     }
   }
 

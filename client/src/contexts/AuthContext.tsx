@@ -11,7 +11,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, metadata: {
     name: string;
-    role: 'admin' | 'teacher' | 'student';
+    role: 'super_admin' | 'school_admin' | 'student';
     school_id?: string;
     student_number?: string;
     turma?: string;
@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     metadata: {
       name: string;
-      role: 'admin' | 'teacher' | 'student';
+      role: 'super_admin' | 'school_admin' | 'student';
       school_id?: string;
       student_number?: string;
       turma?: string;
