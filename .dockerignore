@@ -40,6 +40,7 @@ docs/
 
 # Dados e uploads (sensíveis - LGPD)
 data/
+!data/Modelo-de-gabarito.pdf
 uploads/
 exports/
 # Permitir CSVs na pasta tri/ (dados TRI necessários)

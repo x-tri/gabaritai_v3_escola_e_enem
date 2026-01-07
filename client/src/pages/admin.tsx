@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, Trash2, KeyRound, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, Trash2, KeyRound, ChevronLeft, ChevronRight, Printer, FileText, Building2 } from 'lucide-react';
 import { Link } from 'wouter';
 import { CsvUploader, StudentRow } from '@/components/CsvUploader';
 
@@ -56,6 +56,19 @@ interface StudentsResponse {
   turmas: string[];
 }
 
+interface Turma {
+  nome: string;
+  alunosCount: number;
+}
+
+interface TurmaAluno {
+  id: string;
+  name: string;
+  student_number: string | null;
+  turma: string | null;
+  email: string;
+}
+
 export default function AdminPage() {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('alunos');
@@ -81,9 +94,98 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  // Turmas states
+  const [turmasList, setTurmasList] = useState<Turma[]>([]);
+  const [isLoadingTurmas, setIsLoadingTurmas] = useState(false);
+  const [selectedTurmaForPrint, setSelectedTurmaForPrint] = useState<string | null>(null);
+  const [turmaAlunos, setTurmaAlunos] = useState<TurmaAluno[]>([]);
+  const [isLoadingTurmaAlunos, setIsLoadingTurmaAlunos] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
   const handleLogout = async () => {
     await signOut();
   };
+
+  // Fetch turmas
+  const fetchTurmas = useCallback(async () => {
+    setIsLoadingTurmas(true);
+    try {
+      const response = await fetch('/api/admin/turmas');
+      const data = await response.json();
+      if (data.success) {
+        setTurmasList(data.turmas);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar turmas:', error);
+    } finally {
+      setIsLoadingTurmas(false);
+    }
+  }, []);
+
+  // Fetch alunos de uma turma
+  const fetchTurmaAlunos = useCallback(async (turmaNome: string) => {
+    setIsLoadingTurmaAlunos(true);
+    try {
+      const response = await fetch(`/api/admin/turmas/${encodeURIComponent(turmaNome)}/alunos`);
+      const data = await response.json();
+      if (data.success) {
+        setTurmaAlunos(data.alunos);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar alunos da turma:', error);
+    } finally {
+      setIsLoadingTurmaAlunos(false);
+    }
+  }, []);
+
+  // Gerar PDFs de gabaritos
+  const handleGenerateGabaritos = async (turmaNome: string) => {
+    setIsGeneratingPdf(true);
+    try {
+      const response = await fetch('/api/admin/generate-gabaritos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turma: turmaNome }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erro ao gerar gabaritos');
+      }
+
+      // Baixar o PDF
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gabaritos_${turmaNome.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro ao gerar gabaritos:', error);
+      alert(error instanceof Error ? error.message : 'Erro ao gerar gabaritos');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  // Load turmas when tab changes
+  useEffect(() => {
+    if (activeTab === 'turmas') {
+      fetchTurmas();
+    }
+  }, [activeTab, fetchTurmas]);
+
+  // Load turma alunos when selected
+  useEffect(() => {
+    if (selectedTurmaForPrint) {
+      fetchTurmaAlunos(selectedTurmaForPrint);
+    } else {
+      setTurmaAlunos([]);
+    }
+  }, [selectedTurmaForPrint, fetchTurmaAlunos]);
 
   // Fetch students
   const fetchStudents = useCallback(async (page = 1) => {
@@ -520,35 +622,230 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="turmas">
+          <TabsContent value="turmas" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Gestão de Turmas</CardTitle>
-                <CardDescription>
-                  Organize os alunos por turmas
-                </CardDescription>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <CardTitle>Gestão de Turmas</CardTitle>
+                    <CardDescription>
+                      Imprima gabaritos personalizados para cada turma
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchTurmas}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Atualizar
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-12 text-gray-500">
-                  <GraduationCap className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Lista de turmas será adicionada aqui</p>
-                </div>
+                {isLoadingTurmas ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  </div>
+                ) : turmasList.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <GraduationCap className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma turma encontrada</p>
+                    <p className="text-sm mt-2">Importe alunos com turma definida na aba "Alunos"</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {turmasList.map((turma) => (
+                      <Card key={turma.nome} className="relative overflow-hidden">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">{turma.nome}</CardTitle>
+                            <Badge variant="secondary">
+                              {turma.alunosCount} aluno{turma.alunosCount !== 1 ? 's' : ''}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="pt-2">
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setSelectedTurmaForPrint(
+                                selectedTurmaForPrint === turma.nome ? null : turma.nome
+                              )}
+                            >
+                              <Users className="h-4 w-4 mr-2" />
+                              Ver Alunos
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => handleGenerateGabaritos(turma.nome)}
+                              disabled={isGeneratingPdf}
+                            >
+                              {isGeneratingPdf ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Printer className="h-4 w-4 mr-2" />
+                              )}
+                              Imprimir Gabaritos
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
+
+            {/* Lista de alunos da turma selecionada */}
+            {selectedTurmaForPrint && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">Alunos - {selectedTurmaForPrint}</CardTitle>
+                      <CardDescription>
+                        {turmaAlunos.length} aluno(s) nesta turma
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTurmaForPrint(null)}
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingTurmaAlunos ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Matrícula</TableHead>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Email</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {turmaAlunos.map((aluno) => (
+                            <TableRow key={aluno.id}>
+                              <TableCell className="font-mono">
+                                {aluno.student_number || '-'}
+                              </TableCell>
+                              <TableCell>{aluno.name}</TableCell>
+                              <TableCell className="text-sm text-gray-500">
+                                {aluno.email}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
-          <TabsContent value="configuracoes">
+          <TabsContent value="configuracoes" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Configurações da Escola</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Configurações da Escola
+                </CardTitle>
                 <CardDescription>
-                  Ajuste as configurações gerais
+                  Informações e configurações gerais da escola
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="text-center py-12 text-gray-500">
-                  <Settings className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Configurações serão adicionadas aqui</p>
+              <CardContent className="space-y-6">
+                {/* Informações da Escola */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Nome da Escola</label>
+                    <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <p className="font-medium">Escola Demo XTRI</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Identificador</label>
+                    <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <p className="font-mono text-sm">demo</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Estatísticas */}
+                <div className="border-t pt-6">
+                  <h3 className="text-sm font-medium mb-4">Estatísticas</h3>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Users className="h-8 w-8 text-blue-600" />
+                        <div>
+                          <p className="text-2xl font-bold">{pagination.total}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">Total de Alunos</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <GraduationCap className="h-8 w-8 text-green-600" />
+                        <div>
+                          <p className="text-2xl font-bold">{turmasList.length || turmas.length}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">Turmas</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 bg-purple-50 dark:bg-purple-950 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-8 w-8 text-purple-600" />
+                        <div>
+                          <p className="text-2xl font-bold">90</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">Questões/Gabarito</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Instruções */}
+                <div className="border-t pt-6">
+                  <h3 className="text-sm font-medium mb-4">Como usar o sistema</h3>
+                  <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">1</span>
+                      <p><strong>Importar alunos:</strong> Na aba "Alunos", faça upload de um CSV com nome, turma e matrícula</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">2</span>
+                      <p><strong>Imprimir gabaritos:</strong> Na aba "Turmas", clique em "Imprimir Gabaritos" para gerar PDFs personalizados</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">3</span>
+                      <p><strong>Processar respostas:</strong> Volte ao GabaritAI e faça upload dos gabaritos preenchidos para correção automática</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Formato CSV */}
+                <div className="border-t pt-6">
+                  <h3 className="text-sm font-medium mb-4">Formato do CSV para importação</h3>
+                  <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
+                    <p className="text-green-400"># Exemplo de arquivo CSV</p>
+                    <p>NOME,TURMA,MATRICULA</p>
+                    <p>João Silva,1ª Série A,12345678</p>
+                    <p>Maria Santos,1ª Série A,12345679</p>
+                    <p>Pedro Oliveira,1ª Série B,12345680</p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Aceita separadores: vírgula (,) ou ponto-e-vírgula (;)
+                  </p>
                 </div>
               </CardContent>
             </Card>

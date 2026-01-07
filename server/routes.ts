@@ -2907,17 +2907,42 @@ Para cada disciplina:
       const alunos = alunosOriginal || studentsOriginal;
 
       // Validar dados obrigatórios
-      // GAB-203: Aceitar school_id ou schoolId
-      const finalSchoolId = school_id || schoolId;
-
       if (!titulo) {
         return res.status(400).json({ error: "Título é obrigatório" });
       }
-      if (!finalSchoolId) {
-        return res.status(400).json({ error: "school_id é obrigatório" });
-      }
       if (!alunos || !Array.isArray(alunos) || alunos.length === 0) {
         return res.status(400).json({ error: "Lista de alunos é obrigatória" });
+      }
+
+      // GAB-203: Aceitar school_id ou schoolId, com fallback para escola padrão
+      let finalSchoolId = school_id || schoolId;
+
+      // Se não tiver school_id, buscar/criar escola padrão
+      if (!finalSchoolId) {
+        const { data: defaultSchool } = await supabaseAdmin
+          .from("schools")
+          .select("id")
+          .eq("slug", "demo")
+          .single();
+
+        if (defaultSchool) {
+          finalSchoolId = defaultSchool.id;
+          console.log(`[AVALIACOES] Usando escola padrão: ${finalSchoolId}`);
+        } else {
+          // Criar escola demo se não existir
+          const { data: newSchool, error: schoolError } = await supabaseAdmin
+            .from("schools")
+            .insert({ name: "Escola Demo", slug: "demo" })
+            .select()
+            .single();
+
+          if (schoolError) {
+            console.error("[AVALIACOES] Erro ao criar escola padrão:", schoolError);
+            return res.status(500).json({ error: "Erro ao criar escola padrão" });
+          }
+          finalSchoolId = newSchool.id;
+          console.log(`[AVALIACOES] Escola padrão criada: ${finalSchoolId}`);
+        }
       }
 
       console.log(`[AVALIACOES] Criando avaliação: ${titulo} com ${alunos.length} alunos`);
@@ -3213,8 +3238,11 @@ Para cada disciplina:
   // ============================================
   
   const PROJETOS_FILE = path.join(process.cwd(), "data", "projetos.json");
-  
+
   async function ensureProjetosFile() {
+    // Garantir que o diretório existe (fix: ENOENT error in production)
+    const dir = path.dirname(PROJETOS_FILE);
+    await fs.mkdir(dir, { recursive: true });
     try {
       await fs.access(PROJETOS_FILE);
     } catch {
@@ -4169,6 +4197,243 @@ Para cada disciplina:
         error: "Erro ao remover aluno",
         details: error.message
       });
+    }
+  });
+
+  // ============================================================================
+  // TURMAS - Gestão e Geração de Gabaritos
+  // ============================================================================
+
+  // GET /api/admin/turmas - Listar turmas com contagem de alunos
+  app.get("/api/admin/turmas", async (req: Request, res: Response) => {
+    try {
+      // Buscar todas as turmas distintas com contagem
+      const { data: profiles, error } = await supabaseAdmin
+        .from('profiles')
+        .select('turma')
+        .eq('role', 'student')
+        .not('turma', 'is', null);
+
+      if (error) throw error;
+
+      // Agrupar por turma e contar
+      const turmaMap = new Map<string, number>();
+      profiles?.forEach(p => {
+        if (p.turma) {
+          turmaMap.set(p.turma, (turmaMap.get(p.turma) || 0) + 1);
+        }
+      });
+
+      const turmas = Array.from(turmaMap.entries())
+        .map(([nome, count]) => ({ nome, alunosCount: count }))
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+
+      res.json({
+        success: true,
+        turmas,
+        total: turmas.length
+      });
+    } catch (error: any) {
+      console.error("[TURMAS] Erro:", error);
+      res.status(500).json({ error: "Erro ao listar turmas", details: error.message });
+    }
+  });
+
+  // GET /api/admin/turmas/:nome/alunos - Listar alunos de uma turma
+  app.get("/api/admin/turmas/:nome/alunos", async (req: Request, res: Response) => {
+    try {
+      const turma = decodeURIComponent(req.params.nome);
+
+      const { data: alunos, error } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name, student_number, turma, email')
+        .eq('role', 'student')
+        .eq('turma', turma)
+        .order('name');
+
+      if (error) throw error;
+
+      res.json({
+        success: true,
+        turma,
+        alunos: alunos || [],
+        total: alunos?.length || 0
+      });
+    } catch (error: any) {
+      console.error("[TURMAS] Erro ao listar alunos:", error);
+      res.status(500).json({ error: "Erro ao listar alunos da turma", details: error.message });
+    }
+  });
+
+  // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma
+  app.post("/api/admin/generate-gabaritos", async (req: Request, res: Response) => {
+    try {
+      const { turma, alunoIds } = req.body;
+
+      if (!turma && (!alunoIds || alunoIds.length === 0)) {
+        res.status(400).json({ error: "Informe a turma ou lista de alunos" });
+        return;
+      }
+
+      // Buscar alunos
+      let query = supabaseAdmin
+        .from('profiles')
+        .select('id, name, student_number, turma')
+        .eq('role', 'student')
+        .order('name');
+
+      if (alunoIds && alunoIds.length > 0) {
+        query = query.in('id', alunoIds);
+      } else if (turma) {
+        query = query.eq('turma', turma);
+      }
+
+      const { data: alunos, error } = await query;
+
+      if (error) throw error;
+      if (!alunos || alunos.length === 0) {
+        res.status(404).json({ error: "Nenhum aluno encontrado" });
+        return;
+      }
+
+      console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos para turma: ${turma || 'selecionados'}`);
+
+      // Carregar template PDF
+      const templatePath = path.join(process.cwd(), "data", "Modelo-de-gabarito.pdf");
+      let templateBytes: Buffer;
+
+      try {
+        templateBytes = await fs.readFile(templatePath);
+      } catch {
+        // Se não encontrar o template, criar um gabarito simples
+        console.warn("[GABARITOS] Template não encontrado, usando gabarito padrão");
+
+        // Criar PDF simples com pdf-lib
+        const pdfDoc = await PDFDocument.create();
+        const font = await pdfDoc.embedFont("Helvetica");
+        const boldFont = await pdfDoc.embedFont("Helvetica-Bold");
+
+        for (const aluno of alunos) {
+          const page = pdfDoc.addPage([595.28, 841.89]); // A4
+          const { height } = page.getSize();
+
+          // Cabeçalho
+          page.drawText("CARTÃO-RESPOSTA", {
+            x: 50,
+            y: height - 50,
+            size: 24,
+            font: boldFont,
+          });
+
+          page.drawText("SIMULADO DO EXAME NACIONAL DO ENSINO MÉDIO", {
+            x: 50,
+            y: height - 75,
+            size: 10,
+            font,
+          });
+
+          // Dados do aluno
+          page.drawText(`Nome: ${aluno.name || ''}`, {
+            x: 50,
+            y: height - 120,
+            size: 12,
+            font,
+          });
+
+          page.drawText(`Turma: ${aluno.turma || ''}`, {
+            x: 400,
+            y: height - 120,
+            size: 12,
+            font,
+          });
+
+          page.drawText(`Matrícula: ${aluno.student_number || ''}`, {
+            x: 400,
+            y: height - 140,
+            size: 12,
+            font,
+          });
+
+          // Grid de respostas (simplificado)
+          const startY = height - 200;
+          const cols = 6;
+          const questionsPerCol = 15;
+          const colWidth = 85;
+          const rowHeight = 20;
+
+          for (let col = 0; col < cols; col++) {
+            for (let row = 0; row < questionsPerCol; row++) {
+              const qNum = col * questionsPerCol + row + 1;
+              const x = 50 + col * colWidth;
+              const y = startY - row * rowHeight;
+
+              page.drawText(`${qNum.toString().padStart(2, '0')}  Ⓐ Ⓑ Ⓒ Ⓓ Ⓔ`, {
+                x,
+                y,
+                size: 9,
+                font,
+              });
+            }
+          }
+        }
+
+        const pdfBytes = await pdfDoc.save();
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="gabaritos_${turma || 'selecionados'}.pdf"`);
+        res.send(Buffer.from(pdfBytes));
+        return;
+      }
+
+      // Usar template existente
+      const finalDoc = await PDFDocument.create();
+      const font = await finalDoc.embedFont("Helvetica-Bold");
+
+      for (const aluno of alunos) {
+        // Carregar template para cada aluno
+        const templateDoc = await PDFDocument.load(templateBytes);
+        const [templatePage] = await finalDoc.copyPages(templateDoc, [0]);
+
+        const { width, height } = templatePage.getSize();
+
+        // Adicionar nome do aluno (posição aproximada do campo "Nome completo:")
+        templatePage.drawText(aluno.name || '', {
+          x: 55,
+          y: height - 95, // Ajustar conforme template
+          size: 11,
+          font,
+        });
+
+        // Adicionar turma (campo "TURMA" no canto superior direito)
+        templatePage.drawText(aluno.turma || '', {
+          x: width - 180,
+          y: height - 115, // Ajustar conforme template
+          size: 10,
+          font,
+        });
+
+        // Adicionar matrícula (campo "MATRICULA/NÚMERO")
+        templatePage.drawText(aluno.student_number || '', {
+          x: width - 100,
+          y: height - 115, // Ajustar conforme template
+          size: 10,
+          font,
+        });
+
+        finalDoc.addPage(templatePage);
+      }
+
+      const pdfBytes = await finalDoc.save();
+
+      console.log(`[GABARITOS] PDF gerado com ${alunos.length} páginas`);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="gabaritos_${turma || 'selecionados'}.pdf"`);
+      res.send(Buffer.from(pdfBytes));
+
+    } catch (error: any) {
+      console.error("[GABARITOS] Erro:", error);
+      res.status(500).json({ error: "Erro ao gerar gabaritos", details: error.message });
     }
   });
 
