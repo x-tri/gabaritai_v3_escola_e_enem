@@ -21,9 +21,13 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
   "http://127.0.0.1:5173",
-  // Production - Vercel (adicione seu domínio real aqui)
+  // Production - Vercel
   "https://gabaritai.vercel.app",
   "https://xtri-gabaritos.vercel.app",
+  "https://gabaritai-livid.vercel.app",
+  // Production - Custom domain
+  "https://xtrigabarito.app",
+  "https://www.xtrigabarito.app",
   // Custom domain from environment
   process.env.FRONTEND_URL,
 ].filter(Boolean) as string[];
