@@ -1,22 +1,133 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogOut, Users, FileText, BarChart2, School } from 'lucide-react';
+import {
+  Loader2, LogOut, Users, FileText, BarChart2, School,
+  TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
+  Search, ChevronLeft, ChevronRight, Eye, X
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
+  ResponsiveContainer, Cell, RadarChart, PolarGrid, PolarAngleAxis,
+  PolarRadiusAxis, Radar, Legend
+} from 'recharts';
+
+// Types
+interface DashboardStats {
+  totalAlunos: number;
+  totalProvas: number;
+  mediaAcertos: number;
+  totalTurmas: number;
+  totalSeries: number;
+}
+
+interface TurmaRanking {
+  turma: string;
+  alunos: number;
+  media: number;
+  tri_lc: number | null;
+  tri_ch: number | null;
+  tri_cn: number | null;
+  tri_mt: number | null;
+}
+
+interface AlunoDestaque {
+  nome: string;
+  matricula: string | null;
+  turma: string | null;
+  acertos: number;
+}
+
+interface DashboardData {
+  stats: DashboardStats;
+  turmaRanking: TurmaRanking[];
+  desempenhoPorArea: {
+    lc: number | null;
+    ch: number | null;
+    cn: number | null;
+    mt: number | null;
+  };
+  topAlunos: AlunoDestaque[];
+  atencao: AlunoDestaque[];
+  series: string[];
+  turmas: string[];
+}
+
+interface TurmaAluno {
+  posicao: number;
+  nome: string;
+  matricula: string | null;
+  acertos: number;
+  tri_lc: number | null;
+  tri_ch: number | null;
+  tri_cn: number | null;
+  tri_mt: number | null;
+  comparacao: { acertos: string | null };
+  prova: string;
+  data: string;
+}
+
+interface TurmaAlunosData {
+  turma: string;
+  totalAlunos: number;
+  mediaTurma: {
+    acertos: number;
+    lc: number | null;
+    ch: number | null;
+    cn: number | null;
+    mt: number | null;
+  };
+  alunos: TurmaAluno[];
+}
+
+interface AlunoHistorico {
+  aluno: { nome: string; matricula: string; turma: string };
+  posicao: { atual: number; total: number };
+  ultimoResultado: {
+    acertos: number;
+    tri_lc: number | null;
+    tri_ch: number | null;
+    tri_cn: number | null;
+    tri_mt: number | null;
+  };
+  mediaTurma: { acertos: number; lc: number; ch: number; cn: number; mt: number };
+  historico: Array<{
+    id: string;
+    prova: string;
+    data: string;
+    acertos: number;
+    erros: number;
+    brancos: number;
+    tri_lc: number | null;
+    tri_ch: number | null;
+    tri_cn: number | null;
+    tri_mt: number | null;
+  }>;
+  evolucao: {
+    acertos: number;
+    tri_lc: number;
+    tri_ch: number;
+    tri_cn: number;
+    tri_mt: number;
+  } | null;
+  totalProvas: number;
+}
 
 interface StudentResult {
   id: string;
   student_name: string;
   student_number: string | null;
   turma: string | null;
-  score: number | null;
   correct_answers: number | null;
-  wrong_answers: number | null;
-  blank_answers: number | null;
   tri_lc: number | null;
   tri_ch: number | null;
   tri_cn: number | null;
@@ -25,71 +136,194 @@ interface StudentResult {
   created_at: string;
 }
 
-interface SchoolStats {
-  totalStudents: number;
-  totalExams: number;
-  averageScore: number;
-  turmas: string[];
+// Helper functions
+function getComparacaoIcon(comparacao: string | null) {
+  if (comparacao === 'acima') return <TrendingUp className="h-4 w-4 text-green-600" />;
+  if (comparacao === 'abaixo') return <TrendingDown className="h-4 w-4 text-red-600" />;
+  return <Minus className="h-4 w-4 text-gray-400" />;
+}
+
+function getPosicaoEmoji(posicao: number) {
+  if (posicao === 1) return '🥇';
+  if (posicao === 2) return '🥈';
+  if (posicao === 3) return '🥉';
+  return posicao.toString();
+}
+
+function getTriFaixaColor(tri: number | null): string {
+  if (tri === null) return 'bg-gray-200';
+  if (tri < 500) return 'bg-red-400';
+  if (tri < 650) return 'bg-yellow-400';
+  return 'bg-green-400';
+}
+
+function getTriFaixaLabel(tri: number | null): string {
+  if (tri === null) return '-';
+  if (tri < 500) return 'Baixo';
+  if (tri < 650) return 'Médio';
+  return 'Alto';
 }
 
 export default function EscolaPage() {
   const { profile, signOut } = useAuth();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState('visao-geral');
+
+  // Dashboard state
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
+
+  // Results state
   const [results, setResults] = useState<StudentResult[]>([]);
-  const [stats, setStats] = useState<SchoolStats | null>(null);
+  const [loadingResults, setLoadingResults] = useState(false);
+
+  // Filters
+  const [selectedSerie, setSelectedSerie] = useState<string>('all');
   const [selectedTurma, setSelectedTurma] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    fetchSchoolData();
-  }, []);
+  // Turma modal state
+  const [selectedTurmaModal, setSelectedTurmaModal] = useState<string | null>(null);
+  const [turmaAlunosData, setTurmaAlunosData] = useState<TurmaAlunosData | null>(null);
+  const [loadingTurmaAlunos, setLoadingTurmaAlunos] = useState(false);
 
-  async function fetchSchoolData() {
+  // Aluno modal state
+  const [selectedAlunoMatricula, setSelectedAlunoMatricula] = useState<string | null>(null);
+  const [alunoHistorico, setAlunoHistorico] = useState<AlunoHistorico | null>(null);
+  const [loadingAlunoHistorico, setLoadingAlunoHistorico] = useState(false);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  // Fetch dashboard data
+  const fetchDashboard = useCallback(async () => {
     try {
-      setLoading(true);
+      setLoadingDashboard(true);
+      const response = await fetch('/api/escola/dashboard');
+      if (!response.ok) throw new Error('Erro ao buscar dashboard');
+      const data = await response.json();
+      setDashboardData(data);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoadingDashboard(false);
+    }
+  }, [toast]);
 
-      // Buscar resultados da escola
-      const response = await fetch('/api/escola/results', {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar dados da escola');
-      }
-
+  // Fetch results
+  const fetchResults = useCallback(async () => {
+    try {
+      setLoadingResults(true);
+      const response = await fetch('/api/escola/results');
+      if (!response.ok) throw new Error('Erro ao buscar resultados');
       const data = await response.json();
       setResults(data.results || []);
-      setStats(data.stats || null);
     } catch (error: any) {
-      toast({
-        title: 'Erro',
-        description: error.message || 'Falha ao carregar dados',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } finally {
-      setLoading(false);
+      setLoadingResults(false);
     }
-  }
+  }, [toast]);
 
-  // Filtrar resultados por turma
-  const filteredResults = selectedTurma === 'all'
-    ? results
-    : results.filter(r => r.turma === selectedTurma);
-
-  // Agrupar por turma para estatísticas
-  const turmaStats = results.reduce((acc, result) => {
-    const turma = result.turma || 'Sem turma';
-    if (!acc[turma]) {
-      acc[turma] = { count: 0, totalCorrect: 0 };
+  // Fetch turma alunos
+  const fetchTurmaAlunos = useCallback(async (turma: string) => {
+    try {
+      setLoadingTurmaAlunos(true);
+      const response = await fetch(`/api/escola/turmas/${encodeURIComponent(turma)}/alunos`);
+      if (!response.ok) throw new Error('Erro ao buscar alunos da turma');
+      const data = await response.json();
+      setTurmaAlunosData(data);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoadingTurmaAlunos(false);
     }
-    acc[turma].count++;
-    acc[turma].totalCorrect += result.correct_answers || 0;
-    return acc;
-  }, {} as Record<string, { count: number; totalCorrect: number }>);
+  }, [toast]);
 
-  if (loading) {
+  // Fetch aluno historico
+  const fetchAlunoHistorico = useCallback(async (matricula: string) => {
+    try {
+      setLoadingAlunoHistorico(true);
+      const response = await fetch(`/api/escola/alunos/${encodeURIComponent(matricula)}/historico`);
+      if (!response.ok) throw new Error('Erro ao buscar histórico do aluno');
+      const data = await response.json();
+      setAlunoHistorico(data);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoadingAlunoHistorico(false);
+    }
+  }, [toast]);
+
+  // Initial load
+  useEffect(() => {
+    fetchDashboard();
+    fetchResults();
+  }, [fetchDashboard, fetchResults]);
+
+  // Load turma alunos when modal opens
+  useEffect(() => {
+    if (selectedTurmaModal) {
+      fetchTurmaAlunos(selectedTurmaModal);
+    } else {
+      setTurmaAlunosData(null);
+    }
+  }, [selectedTurmaModal, fetchTurmaAlunos]);
+
+  // Load aluno historico when modal opens
+  useEffect(() => {
+    if (selectedAlunoMatricula) {
+      fetchAlunoHistorico(selectedAlunoMatricula);
+    } else {
+      setAlunoHistorico(null);
+    }
+  }, [selectedAlunoMatricula, fetchAlunoHistorico]);
+
+  // Extract serie from turma name
+  const extractSerie = (turma: string | null): string => {
+    if (!turma) return '';
+    const match = turma.match(/^(\d+ª?\s*[Ss]érie|\d+º?\s*[Aa]no)/i);
+    return match ? match[1] : turma;
+  };
+
+  // Filter results
+  const filteredResults = results.filter(r => {
+    if (selectedSerie !== 'all' && extractSerie(r.turma) !== selectedSerie) return false;
+    if (selectedTurma !== 'all' && r.turma !== selectedTurma) return false;
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      if (!r.student_name?.toLowerCase().includes(search) &&
+          !r.student_number?.toLowerCase().includes(search)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Paginate results
+  const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
+  const paginatedResults = filteredResults.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Helper to filter out null/empty turmas
+  const isValidTurma = (turma: string | null): turma is string => {
+    return turma !== null && turma !== 'null' && turma.trim() !== '' && turma !== 'Sem turma';
+  };
+
+  // Get unique series from results (excluding null/invalid)
+  const availableSeries = [...new Set(results.map(r => extractSerie(r.turma)).filter(s => s && s !== 'Sem série' && s !== 'null'))].sort();
+
+  // Get turmas for selected serie (excluding null/invalid)
+  const availableTurmas = selectedSerie === 'all'
+    ? [...new Set(results.map(r => r.turma).filter(isValidTurma))].sort()
+    : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma))].sort();
+
+  if (loadingDashboard && !dashboardData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -119,14 +353,14 @@ export default function EscolaPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Cards de Estatísticas */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total de Alunos</CardDescription>
               <CardTitle className="text-3xl">
                 <Users className="h-5 w-5 inline mr-2 text-blue-600" />
-                {stats?.totalStudents || 0}
+                {dashboardData?.stats.totalAlunos || 0}
               </CardTitle>
             </CardHeader>
           </Card>
@@ -136,133 +370,753 @@ export default function EscolaPage() {
               <CardDescription>Provas Realizadas</CardDescription>
               <CardTitle className="text-3xl">
                 <FileText className="h-5 w-5 inline mr-2 text-green-600" />
-                {stats?.totalExams || 0}
+                {dashboardData?.stats.totalProvas || 0}
               </CardTitle>
             </CardHeader>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Nota Média</CardDescription>
+              <CardDescription>Média de Acertos</CardDescription>
               <CardTitle className="text-3xl">
                 <BarChart2 className="h-5 w-5 inline mr-2 text-purple-600" />
-                {stats?.averageScore?.toFixed(1) || '-'}
+                {dashboardData?.stats.mediaAcertos?.toFixed(1) || '-'}
               </CardTitle>
             </CardHeader>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Turmas</CardDescription>
+              <CardDescription>Turmas / Séries</CardDescription>
               <CardTitle className="text-3xl">
-                {stats?.turmas?.length || 0}
+                {dashboardData?.stats.totalTurmas || 0} / {dashboardData?.stats.totalSeries || 0}
               </CardTitle>
             </CardHeader>
           </Card>
         </div>
 
-        {/* Tabs de Conteúdo */}
-        <Tabs defaultValue="resultados" className="space-y-4">
-          <TabsList>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4 max-w-xl">
+            <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
             <TabsTrigger value="resultados">Resultados</TabsTrigger>
-            <TabsTrigger value="turmas">Por Turma</TabsTrigger>
+            <TabsTrigger value="turmas">Turmas</TabsTrigger>
+            <TabsTrigger value="alunos">Alunos</TabsTrigger>
           </TabsList>
 
+          {/* TAB: Visão Geral */}
+          <TabsContent value="visao-geral" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Ranking de Turmas */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Trophy className="h-5 w-5 text-yellow-500" />
+                    Ranking por Turma
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {dashboardData?.turmaRanking.map((turma, index) => (
+                    <div key={turma.turma || `ranking-${index}`} className="flex items-center gap-3">
+                      <span className="w-8 text-lg font-bold text-gray-500">
+                        {index + 1}º
+                      </span>
+                      <div className="flex-1">
+                        <div className="flex justify-between mb-1">
+                          <span className="font-medium">{turma.turma || 'Sem turma'}</span>
+                          <span className="text-sm text-gray-500">
+                            {turma.media.toFixed(1)} acertos
+                          </span>
+                        </div>
+                        <Progress
+                          value={(turma.media / 90) * 100}
+                          className="h-2"
+                        />
+                      </div>
+                      <Badge variant="outline">{turma.alunos} alunos</Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              {/* Gráfico de Barras - TRI por Área */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart2 className="h-5 w-5 text-blue-500" />
+                    TRI Médio por Área
+                  </CardTitle>
+                  <CardDescription>Desempenho médio em cada área do conhecimento</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart
+                      data={[
+                        { area: 'LC', value: dashboardData?.desempenhoPorArea.lc || 0, label: 'Linguagens' },
+                        { area: 'CH', value: dashboardData?.desempenhoPorArea.ch || 0, label: 'C. Humanas' },
+                        { area: 'CN', value: dashboardData?.desempenhoPorArea.cn || 0, label: 'C. Natureza' },
+                        { area: 'MT', value: dashboardData?.desempenhoPorArea.mt || 0, label: 'Matemática' },
+                      ]}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="area" tick={{ fontSize: 12 }} />
+                      <YAxis domain={[0, 1000]} tick={{ fontSize: 11 }} />
+                      <RechartsTooltip
+                        formatter={(value: number, name, props) => [`${value.toFixed(0)}`, props.payload.label]}
+                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                      />
+                      <Bar dataKey="value" name="TRI" radius={[4, 4, 0, 0]}>
+                        <Cell fill="#3b82f6" />
+                        <Cell fill="#10b981" />
+                        <Cell fill="#8b5cf6" />
+                        <Cell fill="#f97316" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    Escala TRI: Baixo (&lt;500) | Médio (500-650) | Alto (&gt;650)
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Gráfico Radar - TRI por Área */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart2 className="h-5 w-5 text-purple-500" />
+                    Radar: Perfil de Desempenho
+                  </CardTitle>
+                  <CardDescription>Visualização comparativa das áreas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <RadarChart
+                      data={[
+                        { area: 'LC', value: dashboardData?.desempenhoPorArea.lc || 0, fullMark: 1000 },
+                        { area: 'CH', value: dashboardData?.desempenhoPorArea.ch || 0, fullMark: 1000 },
+                        { area: 'CN', value: dashboardData?.desempenhoPorArea.cn || 0, fullMark: 1000 },
+                        { area: 'MT', value: dashboardData?.desempenhoPorArea.mt || 0, fullMark: 1000 },
+                      ]}
+                    >
+                      <PolarGrid />
+                      <PolarAngleAxis dataKey="area" tick={{ fontSize: 12 }} />
+                      <PolarRadiusAxis angle={90} domain={[0, 1000]} tick={{ fontSize: 10 }} />
+                      <Radar
+                        name="TRI"
+                        dataKey="value"
+                        stroke="#8b5cf6"
+                        fill="#8b5cf6"
+                        fillOpacity={0.5}
+                      />
+                      <RechartsTooltip
+                        formatter={(value: number) => [`${value.toFixed(0)}`, 'TRI Médio']}
+                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* Gráfico de Barras - TRI por Turma */}
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart2 className="h-5 w-5 text-green-500" />
+                    TRI Médio por Turma
+                  </CardTitle>
+                  <CardDescription>Comparativo de desempenho TRI entre as turmas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={dashboardData?.turmaRanking.map(t => ({
+                        turma: t.turma || 'Sem turma',
+                        lc: t.tri_lc || 0,
+                        ch: t.tri_ch || 0,
+                        cn: t.tri_cn || 0,
+                        mt: t.tri_mt || 0,
+                        media: ((t.tri_lc || 0) + (t.tri_ch || 0) + (t.tri_cn || 0) + (t.tri_mt || 0)) / 4,
+                      })) || []}
+                      layout="vertical"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis type="number" domain={[0, 1000]} tick={{ fontSize: 11 }} />
+                      <YAxis dataKey="turma" type="category" tick={{ fontSize: 11 }} width={80} />
+                      <RechartsTooltip
+                        formatter={(value: number, name) => [`${value.toFixed(0)}`, name]}
+                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                      />
+                      <Legend />
+                      <Bar dataKey="lc" name="LC" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="ch" name="CH" fill="#10b981" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="cn" name="CN" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="mt" name="MT" fill="#f97316" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* Top 5 Alunos */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-green-600">
+                    <TrendingUp className="h-5 w-5" />
+                    Top 5 Alunos
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {dashboardData?.topAlunos.map((aluno, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">{getPosicaoEmoji(index + 1)}</span>
+                          <div>
+                            <p className="font-medium">{aluno.nome}</p>
+                            <p className="text-xs text-gray-500">{aluno.turma || 'Sem turma'}</p>
+                          </div>
+                        </div>
+                        <Badge className="bg-green-100 text-green-800">
+                          {aluno.acertos} acertos
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Alunos que precisam de atenção */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-600">
+                    <AlertTriangle className="h-5 w-5" />
+                    Atenção Necessária
+                  </CardTitle>
+                  <CardDescription>Alunos abaixo de 50% de acertos</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {dashboardData?.atencao.length === 0 ? (
+                    <p className="text-center text-gray-500 py-4">
+                      Nenhum aluno nesta faixa
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {dashboardData?.atencao.map((aluno, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                          <div>
+                            <p className="font-medium">{aluno.nome}</p>
+                            <p className="text-xs text-gray-500">{aluno.turma || 'Sem turma'}</p>
+                          </div>
+                          <Badge variant="destructive">
+                            {aluno.acertos} acertos
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* TAB: Resultados */}
           <TabsContent value="resultados">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Resultados dos Alunos</CardTitle>
-                  <select
-                    value={selectedTurma}
-                    onChange={(e) => setSelectedTurma(e.target.value)}
-                    className="border rounded px-3 py-1 text-sm"
-                  >
-                    <option value="all">Todas as turmas</option>
-                    {stats?.turmas?.map((turma) => (
-                      <option key={turma} value={turma}>{turma}</option>
-                    ))}
-                  </select>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle>Resultados dos Alunos</CardTitle>
+                    <CardDescription>
+                      {filteredResults.length} resultado(s) encontrado(s)
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Select value={selectedSerie} onValueChange={(v) => { setSelectedSerie(v); setSelectedTurma('all'); setCurrentPage(1); }}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Série" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas séries</SelectItem>
+                        {availableSeries.map(serie => (
+                          <SelectItem key={serie} value={serie}>{serie}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={selectedTurma} onValueChange={(v) => { setSelectedTurma(v); setCurrentPage(1); }}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Turma" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas turmas</SelectItem>
+                        {availableTurmas.map(turma => (
+                          <SelectItem key={turma} value={turma!}>{turma}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                {filteredResults.length === 0 ? (
+                {loadingResults ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : filteredResults.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">
                     Nenhum resultado encontrado
                   </p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Aluno</TableHead>
-                          <TableHead>Matrícula</TableHead>
-                          <TableHead>Turma</TableHead>
-                          <TableHead>Prova</TableHead>
-                          <TableHead className="text-center">Acertos</TableHead>
-                          <TableHead className="text-center">LC</TableHead>
-                          <TableHead className="text-center">CH</TableHead>
-                          <TableHead className="text-center">CN</TableHead>
-                          <TableHead className="text-center">MT</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredResults.map((result) => (
-                          <TableRow key={result.id}>
-                            <TableCell className="font-medium">
-                              {result.student_name}
-                            </TableCell>
-                            <TableCell>{result.student_number || '-'}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{result.turma || '-'}</Badge>
-                            </TableCell>
-                            <TableCell>{result.exam_title}</TableCell>
-                            <TableCell className="text-center">
-                              {result.correct_answers ?? '-'}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {result.tri_lc?.toFixed(1) || '-'}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {result.tri_ch?.toFixed(1) || '-'}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {result.tri_cn?.toFixed(1) || '-'}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {result.tri_mt?.toFixed(1) || '-'}
-                            </TableCell>
+                  <>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Aluno</TableHead>
+                            <TableHead>Matrícula</TableHead>
+                            <TableHead>Turma</TableHead>
+                            <TableHead>Prova</TableHead>
+                            <TableHead className="text-center">Acertos</TableHead>
+                            <TableHead className="text-center">LC</TableHead>
+                            <TableHead className="text-center">CH</TableHead>
+                            <TableHead className="text-center">CN</TableHead>
+                            <TableHead className="text-center">MT</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {paginatedResults.map((result) => (
+                            <TableRow key={result.id}>
+                              <TableCell className="font-medium">
+                                {result.student_name}
+                              </TableCell>
+                              <TableCell>{result.student_number || '-'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {result.turma && result.turma !== 'null' ? result.turma : 'Sem turma'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{result.exam_title}</TableCell>
+                              <TableCell className="text-center font-medium">
+                                {result.correct_answers ?? '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {result.tri_lc?.toFixed(0) || '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {result.tri_ch?.toFixed(0) || '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {result.tri_cn?.toFixed(0) || '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {result.tri_mt?.toFixed(0) || '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4">
+                        <p className="text-sm text-gray-500">
+                          Página {currentPage} de {totalPages}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(p => p - 1)}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(p => p + 1)}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
 
+          {/* TAB: Turmas */}
           <TabsContent value="turmas">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Object.entries(turmaStats).map(([turma, data]) => (
-                <Card key={turma}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{turma}</CardTitle>
+              {dashboardData?.turmaRanking.map((turma, index) => (
+                <Card key={turma.turma || `turma-${index}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{turma.turma || 'Sem turma'}</CardTitle>
+                      <Badge variant="secondary">{turma.alunos} alunos</Badge>
+                    </div>
                     <CardDescription>
-                      {data.count} aluno{data.count !== 1 ? 's' : ''}
+                      Posição: {index + 1}º no ranking
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-3">
                     <div className="text-2xl font-bold">
-                      Média: {(data.totalCorrect / data.count).toFixed(1)} acertos
+                      Média: {turma.media.toFixed(1)} acertos
                     </div>
+                    <div className="grid grid-cols-4 gap-2 text-xs text-center">
+                      <div>
+                        <p className="text-gray-500">LC</p>
+                        <p className="font-medium">{turma.tri_lc?.toFixed(0) || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">CH</p>
+                        <p className="font-medium">{turma.tri_ch?.toFixed(0) || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">CN</p>
+                        <p className="font-medium">{turma.tri_cn?.toFixed(0) || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">MT</p>
+                        <p className="font-medium">{turma.tri_mt?.toFixed(0) || '-'}</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setSelectedTurmaModal(turma.turma)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      Ver Alunos
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
             </div>
           </TabsContent>
+
+          {/* TAB: Alunos */}
+          <TabsContent value="alunos">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <CardTitle>Lista de Alunos</CardTitle>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Buscar por nome ou matrícula..."
+                        value={searchTerm}
+                        onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                        className="pl-10 w-64"
+                      />
+                    </div>
+                    <Select value={selectedSerie} onValueChange={(v) => { setSelectedSerie(v); setSelectedTurma('all'); setCurrentPage(1); }}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Série" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas séries</SelectItem>
+                        {availableSeries.map(serie => (
+                          <SelectItem key={serie} value={serie}>{serie}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={selectedTurma} onValueChange={(v) => { setSelectedTurma(v); setCurrentPage(1); }}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Turma" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas turmas</SelectItem>
+                        {availableTurmas.map(turma => (
+                          <SelectItem key={turma} value={turma!}>{turma}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingResults ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Aluno</TableHead>
+                            <TableHead>Matrícula</TableHead>
+                            <TableHead>Turma</TableHead>
+                            <TableHead className="text-center">Último Acertos</TableHead>
+                            <TableHead className="text-center">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {paginatedResults.map((result) => (
+                            <TableRow key={result.id}>
+                              <TableCell className="font-medium">
+                                {result.student_name}
+                              </TableCell>
+                              <TableCell>{result.student_number || '-'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {result.turma && result.turma !== 'null' ? result.turma : 'Sem turma'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-center font-medium">
+                                {result.correct_answers ?? '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => result.student_number && setSelectedAlunoMatricula(result.student_number)}
+                                  disabled={!result.student_number}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4">
+                        <p className="text-sm text-gray-500">
+                          Página {currentPage} de {totalPages}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(p => p - 1)}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(p => p + 1)}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </main>
+
+      {/* Modal: Ver Alunos da Turma */}
+      <Dialog open={!!selectedTurmaModal} onOpenChange={(open) => !open && setSelectedTurmaModal(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>{turmaAlunosData?.turma} - {turmaAlunosData?.totalAlunos} alunos</DialogTitle>
+                <DialogDescription>
+                  Média da turma: {turmaAlunosData?.mediaTurma.acertos.toFixed(1)} acertos |
+                  LC: {turmaAlunosData?.mediaTurma.lc?.toFixed(0) || '-'} |
+                  CH: {turmaAlunosData?.mediaTurma.ch?.toFixed(0) || '-'} |
+                  CN: {turmaAlunosData?.mediaTurma.cn?.toFixed(0) || '-'} |
+                  MT: {turmaAlunosData?.mediaTurma.mt?.toFixed(0) || '-'}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {loadingTurmaAlunos ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Aluno</TableHead>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead className="text-center">Acertos</TableHead>
+                    <TableHead className="text-center">LC</TableHead>
+                    <TableHead className="text-center">CH</TableHead>
+                    <TableHead className="text-center">CN</TableHead>
+                    <TableHead className="text-center">MT</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {turmaAlunosData?.alunos.map((aluno) => (
+                    <TableRow key={aluno.matricula || aluno.nome}>
+                      <TableCell className="font-bold text-lg">
+                        {getPosicaoEmoji(aluno.posicao)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {aluno.nome}
+                          {getComparacaoIcon(aluno.comparacao.acertos)}
+                        </div>
+                      </TableCell>
+                      <TableCell>{aluno.matricula || '-'}</TableCell>
+                      <TableCell className="text-center font-medium">
+                        {aluno.acertos ?? '-'}
+                      </TableCell>
+                      <TableCell className="text-center">{aluno.tri_lc?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center">{aluno.tri_ch?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center">{aluno.tri_cn?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center">{aluno.tri_mt?.toFixed(0) || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="pt-4 border-t text-xs text-gray-500">
+            Legenda: <TrendingUp className="h-3 w-3 inline text-green-600" /> Acima da média |
+            <Minus className="h-3 w-3 inline text-gray-400 mx-1" /> Na média |
+            <TrendingDown className="h-3 w-3 inline text-red-600" /> Abaixo da média
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Detalhes do Aluno */}
+      <Dialog open={!!selectedAlunoMatricula} onOpenChange={(open) => !open && setSelectedAlunoMatricula(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{alunoHistorico?.aluno.nome}</DialogTitle>
+            <DialogDescription>
+              Matrícula: {alunoHistorico?.aluno.matricula} |
+              Turma: {alunoHistorico?.aluno.turma} |
+              Posição: {alunoHistorico?.posicao.atual}º de {alunoHistorico?.posicao.total} alunos
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingAlunoHistorico ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : alunoHistorico && (
+            <div className="flex-1 overflow-auto space-y-6">
+              {/* Comparativo com Turma */}
+              <div>
+                <h4 className="font-medium mb-3">Desempenho vs Turma</h4>
+                <div className="space-y-2">
+                  {[
+                    { label: 'LC', aluno: alunoHistorico.ultimoResultado.tri_lc, turma: alunoHistorico.mediaTurma.lc },
+                    { label: 'CH', aluno: alunoHistorico.ultimoResultado.tri_ch, turma: alunoHistorico.mediaTurma.ch },
+                    { label: 'CN', aluno: alunoHistorico.ultimoResultado.tri_cn, turma: alunoHistorico.mediaTurma.cn },
+                    { label: 'MT', aluno: alunoHistorico.ultimoResultado.tri_mt, turma: alunoHistorico.mediaTurma.mt },
+                  ].map(area => {
+                    const diff = (area.aluno || 0) - area.turma;
+                    return (
+                      <div key={area.label} className="flex items-center gap-3">
+                        <span className="w-8 font-medium">{area.label}:</span>
+                        <div className="flex-1 h-4 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${diff >= 0 ? 'bg-green-500' : 'bg-yellow-500'}`}
+                            style={{ width: `${Math.min(((area.aluno || 0) / 1000) * 100, 100)}%` }}
+                          />
+                        </div>
+                        <span className="w-16 text-right font-medium">{area.aluno?.toFixed(0) || '-'}</span>
+                        <span className="w-24 text-xs text-gray-500">
+                          (turma: {area.turma.toFixed(0)})
+                        </span>
+                        <span className={`w-12 text-xs font-medium ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {diff >= 0 ? '+' : ''}{diff.toFixed(0)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Histórico de Provas */}
+              <div>
+                <h4 className="font-medium mb-3">Histórico de Provas ({alunoHistorico.totalProvas})</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Prova</TableHead>
+                      <TableHead className="text-center">Acertos</TableHead>
+                      <TableHead className="text-center">LC</TableHead>
+                      <TableHead className="text-center">CH</TableHead>
+                      <TableHead className="text-center">CN</TableHead>
+                      <TableHead className="text-center">MT</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {alunoHistorico.historico.map((prova) => (
+                      <TableRow key={prova.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{prova.prova}</p>
+                            <p className="text-xs text-gray-500">
+                              {new Date(prova.data).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center font-medium">{prova.acertos}</TableCell>
+                        <TableCell className="text-center">{prova.tri_lc?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center">{prova.tri_ch?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center">{prova.tri_cn?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center">{prova.tri_mt?.toFixed(0) || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Evolução */}
+              {alunoHistorico.evolucao && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium mb-2">Evolução</h4>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <span>
+                      Acertos: <span className={alunoHistorico.evolucao.acertos >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {alunoHistorico.evolucao.acertos >= 0 ? '+' : ''}{alunoHistorico.evolucao.acertos}
+                      </span>
+                    </span>
+                    <span>
+                      LC: <span className={alunoHistorico.evolucao.tri_lc >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {alunoHistorico.evolucao.tri_lc >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_lc.toFixed(0)}
+                      </span>
+                    </span>
+                    <span>
+                      CH: <span className={alunoHistorico.evolucao.tri_ch >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {alunoHistorico.evolucao.tri_ch >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_ch.toFixed(0)}
+                      </span>
+                    </span>
+                    <span>
+                      CN: <span className={alunoHistorico.evolucao.tri_cn >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {alunoHistorico.evolucao.tri_cn >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_cn.toFixed(0)}
+                      </span>
+                    </span>
+                    <span>
+                      MT: <span className={alunoHistorico.evolucao.tri_mt >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {alunoHistorico.evolucao.tri_mt >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_mt.toFixed(0)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

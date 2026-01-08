@@ -5263,6 +5263,443 @@ Para cada disciplina:
     }
   });
 
+  // GET /api/escola/dashboard - Dashboard completo com rankings
+  app.get("/api/escola/dashboard", async (req: Request, res: Response) => {
+    try {
+      // Buscar todos os resultados
+      const { data: answers, error: answersError } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          correct_answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          created_at,
+          exams(title)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (answersError) throw answersError;
+
+      const results = answers || [];
+
+      // Extrair séries das turmas (ex: "1ª Série A" -> "1ª Série")
+      const extractSerie = (turma: string | null): string => {
+        if (!turma) return "Sem série";
+        const match = turma.match(/^(\d+ª?\s*[Ss]érie|\d+º?\s*[Aa]no)/i);
+        return match ? match[1] : turma;
+      };
+
+      // Estatísticas gerais
+      const turmasSet = new Set<string>();
+      const seriesSet = new Set<string>();
+      const uniqueStudents = new Set<string>();
+      let totalCorrect = 0;
+      let totalCount = 0;
+      let totalLC = 0, totalCH = 0, totalCN = 0, totalMT = 0;
+      let triCount = 0;
+
+      results.forEach((r: any) => {
+        if (r.turma) {
+          turmasSet.add(r.turma);
+          seriesSet.add(extractSerie(r.turma));
+        }
+        uniqueStudents.add(r.student_number || r.student_name);
+        if (r.correct_answers != null) {
+          totalCorrect += r.correct_answers;
+          totalCount++;
+        }
+        if (r.tri_lc != null) {
+          totalLC += r.tri_lc;
+          totalCH += r.tri_ch || 0;
+          totalCN += r.tri_cn || 0;
+          totalMT += r.tri_mt || 0;
+          triCount++;
+        }
+      });
+
+      // Ranking por turma
+      const turmaStats: Record<string, {
+        count: number;
+        totalCorrect: number;
+        students: Set<string>;
+        tri_lc: number;
+        tri_ch: number;
+        tri_cn: number;
+        tri_mt: number;
+        triCount: number;
+      }> = {};
+
+      // Helper to normalize turma (null, "null", empty -> "Sem turma")
+      const normalizeTurma = (turma: string | null): string => {
+        if (!turma || turma === "null" || turma.trim() === "") return "Sem turma";
+        return turma;
+      };
+
+      results.forEach((r: any) => {
+        const turma = normalizeTurma(r.turma);
+        if (!turmaStats[turma]) {
+          turmaStats[turma] = {
+            count: 0,
+            totalCorrect: 0,
+            students: new Set(),
+            tri_lc: 0,
+            tri_ch: 0,
+            tri_cn: 0,
+            tri_mt: 0,
+            triCount: 0
+          };
+        }
+        turmaStats[turma].count++;
+        turmaStats[turma].totalCorrect += r.correct_answers || 0;
+        turmaStats[turma].students.add(r.student_number || r.student_name);
+        if (r.tri_lc != null) {
+          turmaStats[turma].tri_lc += r.tri_lc;
+          turmaStats[turma].tri_ch += r.tri_ch || 0;
+          turmaStats[turma].tri_cn += r.tri_cn || 0;
+          turmaStats[turma].tri_mt += r.tri_mt || 0;
+          turmaStats[turma].triCount++;
+        }
+      });
+
+      const turmaRanking = Object.entries(turmaStats)
+        .map(([turma, data]) => ({
+          turma,
+          alunos: data.students.size,
+          media: data.count > 0 ? data.totalCorrect / data.count : 0,
+          tri_lc: data.triCount > 0 ? data.tri_lc / data.triCount : null,
+          tri_ch: data.triCount > 0 ? data.tri_ch / data.triCount : null,
+          tri_cn: data.triCount > 0 ? data.tri_cn / data.triCount : null,
+          tri_mt: data.triCount > 0 ? data.tri_mt / data.triCount : null,
+        }))
+        .sort((a, b) => b.media - a.media);
+
+      // Top 5 alunos (pelo último resultado)
+      const studentBest: Record<string, any> = {};
+      results.forEach((r: any) => {
+        const key = r.student_number || r.student_name;
+        if (!studentBest[key] || (r.correct_answers || 0) > (studentBest[key].correct_answers || 0)) {
+          studentBest[key] = r;
+        }
+      });
+
+      const topAlunos = Object.values(studentBest)
+        .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
+        .slice(0, 5)
+        .map((r: any) => ({
+          nome: r.student_name,
+          matricula: r.student_number,
+          turma: normalizeTurma(r.turma),
+          acertos: r.correct_answers,
+        }));
+
+      // Alunos que precisam de atenção (abaixo de 50% = menos de 45 acertos em 90 questões)
+      const threshold = 45; // 50% de 90 questões
+      const atencao = Object.values(studentBest)
+        .filter((r: any) => (r.correct_answers || 0) < threshold)
+        .sort((a: any, b: any) => (a.correct_answers || 0) - (b.correct_answers || 0))
+        .slice(0, 5)
+        .map((r: any) => ({
+          nome: r.student_name,
+          matricula: r.student_number,
+          turma: normalizeTurma(r.turma),
+          acertos: r.correct_answers,
+        }));
+
+      // Contar provas únicas
+      const { count: examCount } = await supabaseAdmin
+        .from("exams")
+        .select("*", { count: "exact", head: true });
+
+      res.json({
+        stats: {
+          totalAlunos: uniqueStudents.size,
+          totalProvas: examCount || 0,
+          mediaAcertos: totalCount > 0 ? totalCorrect / totalCount : 0,
+          totalTurmas: turmasSet.size,
+          totalSeries: seriesSet.size,
+        },
+        turmaRanking,
+        desempenhoPorArea: {
+          lc: triCount > 0 ? totalLC / triCount : null,
+          ch: triCount > 0 ? totalCH / triCount : null,
+          cn: triCount > 0 ? totalCN / triCount : null,
+          mt: triCount > 0 ? totalMT / triCount : null,
+        },
+        topAlunos,
+        atencao,
+        series: Array.from(seriesSet).sort(),
+        turmas: Array.from(turmasSet).sort(),
+      });
+
+    } catch (error: any) {
+      console.error("[ESCOLA DASHBOARD] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/escola/turmas/:turma/alunos - Alunos de uma turma com métricas comparativas
+  app.get("/api/escola/turmas/:turma/alunos", async (req: Request, res: Response) => {
+    try {
+      const { turma } = req.params;
+      const decodedTurma = decodeURIComponent(turma);
+
+      // Buscar resultados da turma
+      const { data: answers, error } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          correct_answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          created_at,
+          exams(title)
+        `)
+        .eq("turma", decodedTurma)
+        .order("correct_answers", { ascending: false });
+
+      if (error) throw error;
+
+      const results = answers || [];
+
+      // Calcular médias da turma
+      let totalCorrect = 0, totalLC = 0, totalCH = 0, totalCN = 0, totalMT = 0;
+      let count = 0, triCount = 0;
+
+      results.forEach((r: any) => {
+        if (r.correct_answers != null) {
+          totalCorrect += r.correct_answers;
+          count++;
+        }
+        if (r.tri_lc != null) {
+          totalLC += r.tri_lc;
+          totalCH += r.tri_ch || 0;
+          totalCN += r.tri_cn || 0;
+          totalMT += r.tri_mt || 0;
+          triCount++;
+        }
+      });
+
+      const mediaTurma = {
+        acertos: count > 0 ? totalCorrect / count : 0,
+        lc: triCount > 0 ? totalLC / triCount : null,
+        ch: triCount > 0 ? totalCH / triCount : null,
+        cn: triCount > 0 ? totalCN / triCount : null,
+        mt: triCount > 0 ? totalMT / triCount : null,
+      };
+
+      // Agrupar por aluno (pegar melhor resultado)
+      const studentBest: Record<string, any> = {};
+      results.forEach((r: any) => {
+        const key = r.student_number || r.student_name;
+        if (!studentBest[key] || (r.correct_answers || 0) > (studentBest[key].correct_answers || 0)) {
+          studentBest[key] = r;
+        }
+      });
+
+      // Ordenar e adicionar posição
+      const alunos = Object.values(studentBest)
+        .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
+        .map((r: any, index: number) => ({
+          posicao: index + 1,
+          nome: r.student_name,
+          matricula: r.student_number,
+          acertos: r.correct_answers,
+          tri_lc: r.tri_lc,
+          tri_ch: r.tri_ch,
+          tri_cn: r.tri_cn,
+          tri_mt: r.tri_mt,
+          comparacao: {
+            acertos: r.correct_answers != null ? (r.correct_answers > mediaTurma.acertos ? "acima" : r.correct_answers < mediaTurma.acertos ? "abaixo" : "media") : null,
+          },
+          prova: r.exams?.title,
+          data: r.created_at,
+        }));
+
+      res.json({
+        turma: decodedTurma,
+        totalAlunos: alunos.length,
+        mediaTurma,
+        alunos,
+      });
+
+    } catch (error: any) {
+      console.error("[ESCOLA TURMA ALUNOS] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/escola/alunos/:matricula/historico - Histórico completo de um aluno
+  app.get("/api/escola/alunos/:matricula/historico", async (req: Request, res: Response) => {
+    try {
+      const { matricula } = req.params;
+      const decodedMatricula = decodeURIComponent(matricula);
+
+      // Buscar todas as provas do aluno
+      const { data: answers, error } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          correct_answers,
+          wrong_answers,
+          blank_answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          created_at,
+          exams(title)
+        `)
+        .eq("student_number", decodedMatricula)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      const results = answers || [];
+
+      if (results.length === 0) {
+        return res.status(404).json({ error: "Aluno não encontrado" });
+      }
+
+      const aluno = {
+        nome: results[0].student_name,
+        matricula: results[0].student_number,
+        turma: results[0].turma,
+      };
+
+      // Buscar média da turma para comparação
+      const { data: turmaAnswers } = await supabaseAdmin
+        .from("student_answers")
+        .select("correct_answers, tri_lc, tri_ch, tri_cn, tri_mt")
+        .eq("turma", aluno.turma);
+
+      let mediaTurma = { acertos: 0, lc: 0, ch: 0, cn: 0, mt: 0 };
+      if (turmaAnswers && turmaAnswers.length > 0) {
+        const count = turmaAnswers.length;
+        mediaTurma = {
+          acertos: turmaAnswers.reduce((sum, r) => sum + (r.correct_answers || 0), 0) / count,
+          lc: turmaAnswers.reduce((sum, r) => sum + (r.tri_lc || 0), 0) / count,
+          ch: turmaAnswers.reduce((sum, r) => sum + (r.tri_ch || 0), 0) / count,
+          cn: turmaAnswers.reduce((sum, r) => sum + (r.tri_cn || 0), 0) / count,
+          mt: turmaAnswers.reduce((sum, r) => sum + (r.tri_mt || 0), 0) / count,
+        };
+      }
+
+      // Calcular posição na turma
+      const turmaRanking = (turmaAnswers || [])
+        .map(r => r.correct_answers || 0)
+        .sort((a, b) => b - a);
+
+      const ultimoAcerto = results[results.length - 1]?.correct_answers || 0;
+      const posicao = turmaRanking.findIndex(a => a <= ultimoAcerto) + 1;
+      const totalTurma = turmaRanking.length;
+
+      // Histórico formatado
+      const historico = results.map((r: any) => ({
+        id: r.id,
+        prova: r.exams?.title || "Prova",
+        data: r.created_at,
+        acertos: r.correct_answers,
+        erros: r.wrong_answers,
+        brancos: r.blank_answers,
+        tri_lc: r.tri_lc,
+        tri_ch: r.tri_ch,
+        tri_cn: r.tri_cn,
+        tri_mt: r.tri_mt,
+      }));
+
+      // Calcular evolução
+      let evolucao = null;
+      if (historico.length >= 2) {
+        const primeiro = historico[0];
+        const ultimo = historico[historico.length - 1];
+        evolucao = {
+          acertos: (ultimo.acertos || 0) - (primeiro.acertos || 0),
+          tri_lc: (ultimo.tri_lc || 0) - (primeiro.tri_lc || 0),
+          tri_ch: (ultimo.tri_ch || 0) - (primeiro.tri_ch || 0),
+          tri_cn: (ultimo.tri_cn || 0) - (primeiro.tri_cn || 0),
+          tri_mt: (ultimo.tri_mt || 0) - (primeiro.tri_mt || 0),
+        };
+      }
+
+      // Último resultado
+      const ultimo = results[results.length - 1];
+
+      res.json({
+        aluno,
+        posicao: { atual: posicao, total: totalTurma },
+        ultimoResultado: {
+          acertos: ultimo.correct_answers,
+          tri_lc: ultimo.tri_lc,
+          tri_ch: ultimo.tri_ch,
+          tri_cn: ultimo.tri_cn,
+          tri_mt: ultimo.tri_mt,
+        },
+        mediaTurma,
+        historico,
+        evolucao,
+        totalProvas: historico.length,
+      });
+
+    } catch (error: any) {
+      console.error("[ESCOLA ALUNO HISTORICO] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/escola/series - Lista de séries disponíveis
+  app.get("/api/escola/series", async (req: Request, res: Response) => {
+    try {
+      const { data: answers, error } = await supabaseAdmin
+        .from("student_answers")
+        .select("turma")
+        .not("turma", "is", null);
+
+      if (error) throw error;
+
+      const extractSerie = (turma: string): string => {
+        const match = turma.match(/^(\d+ª?\s*[Ss]érie|\d+º?\s*[Aa]no)/i);
+        return match ? match[1] : turma;
+      };
+
+      const seriesMap: Record<string, Set<string>> = {};
+
+      (answers || []).forEach((r: any) => {
+        if (r.turma) {
+          const serie = extractSerie(r.turma);
+          if (!seriesMap[serie]) {
+            seriesMap[serie] = new Set();
+          }
+          seriesMap[serie].add(r.turma);
+        }
+      });
+
+      const series = Object.entries(seriesMap).map(([serie, turmas]) => ({
+        serie,
+        turmas: Array.from(turmas).sort(),
+      })).sort((a, b) => a.serie.localeCompare(b.serie));
+
+      res.json({ series });
+
+    } catch (error: any) {
+      console.error("[ESCOLA SERIES] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============================================================================
   // PLANO DE ESTUDOS PERSONALIZADO POR TRI
   // ============================================================================
