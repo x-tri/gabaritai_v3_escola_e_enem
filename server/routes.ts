@@ -5012,6 +5012,54 @@ Para cada disciplina:
     }
   });
 
+  // PATCH /api/exams/:examId - Atualizar gabarito de uma prova existente
+  app.patch("/api/exams/:examId", async (req: Request, res: Response) => {
+    try {
+      const { examId } = req.params;
+      const { answer_key, question_contents } = req.body;
+
+      if (!answer_key && !question_contents) {
+        return res.status(400).json({
+          error: "Nenhum dado para atualizar",
+          hint: "Envie answer_key e/ou question_contents"
+        });
+      }
+
+      const updateData: Record<string, any> = {};
+      if (answer_key) updateData.answer_key = answer_key;
+      if (question_contents) updateData.question_contents = question_contents;
+
+      const { data, error } = await supabaseAdmin
+        .from("exams")
+        .update(updateData)
+        .eq("id", examId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[EXAMS] Erro ao atualizar:", error);
+        return res.status(500).json({
+          error: "Erro ao atualizar prova",
+          details: error.message
+        });
+      }
+
+      console.log(`[EXAMS] Gabarito atualizado para exam ${examId}: ${answer_key?.length || 0} questões`);
+
+      res.json({
+        success: true,
+        exam: data
+      });
+
+    } catch (error: any) {
+      console.error("[EXAMS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao atualizar prova",
+        details: error.message
+      });
+    }
+  });
+
   // GET /api/exams - Listar provas
   app.get("/api/exams", async (req: Request, res: Response) => {
     try {
