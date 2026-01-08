@@ -1275,9 +1275,10 @@ export async function registerRoutes(
       const pageHeight = templatePage.getHeight();
       
       // Pre-calculate coordinates (same for all pages)
-      // Nome completo: centered in the name field squares
+      // Nome completo: na linha de escrita abaixo do label "Nome completo:"
+      // Usando coordenada Y fixa para posicionar na linha de escrita do campo NOME
       const nomeX = 0.025 * pageWidth + 8;
-      const nomeY = pageHeight - (0.145 * pageHeight) - 20; // Middle of name squares
+      const nomeY = pageHeight - 155; // Posição fixa: ~155pts do topo para ficar na linha de escrita
       // Turma e Matrícula: centered in RESULTADO FINAL box area
       const turmaX = 0.695 * pageWidth + 10;
       const turmaY = pageHeight - (0.145 * pageHeight) - 20; // Middle of RESULTADO FINAL box
@@ -4328,6 +4329,106 @@ Para cada disciplina:
     }
   });
 
+  // POST /api/admin/turmas - Criar nova turma (criar um aluno placeholder para a turma existir)
+  app.post("/api/admin/turmas", async (req: Request, res: Response) => {
+    try {
+      const { nome, school_id } = req.body;
+
+      if (!nome) {
+        res.status(400).json({ error: "Nome da turma é obrigatório" });
+        return;
+      }
+
+      // Verificar se já existe alunos com essa turma
+      const { data: existing, error: checkError } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('turma', nome)
+        .limit(1);
+
+      if (checkError) throw checkError;
+
+      if (existing && existing.length > 0) {
+        res.status(400).json({ error: "Turma já existe" });
+        return;
+      }
+
+      // Turmas são criadas implicitamente quando alunos são cadastrados
+      // Retornar sucesso para indicar que a turma pode ser usada
+      res.json({
+        success: true,
+        message: "Turma criada. Adicione alunos para ativar a turma.",
+        turma: { nome }
+      });
+    } catch (error: any) {
+      console.error("[TURMAS] Erro ao criar turma:", error);
+      res.status(500).json({ error: "Erro ao criar turma", details: error.message });
+    }
+  });
+
+  // POST /api/admin/students - Criar um único aluno
+  app.post("/api/admin/students", async (req: Request, res: Response) => {
+    try {
+      const { nome, matricula, turma, school_id } = req.body;
+
+      if (!nome || !matricula || !turma) {
+        res.status(400).json({ error: "Nome, matrícula e turma são obrigatórios" });
+        return;
+      }
+
+      // Verificar se matrícula já existe
+      const { data: existing, error: checkError } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('student_number', matricula)
+        .limit(1);
+
+      if (checkError) throw checkError;
+
+      if (existing && existing.length > 0) {
+        res.status(400).json({ error: "Matrícula já cadastrada" });
+        return;
+      }
+
+      // Gerar email e senha
+      const email = `${matricula}@escola.gabaritai.com`;
+      const senha = Math.random().toString(36).slice(-8);
+
+      // Criar usuário no Supabase Auth
+      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: senha,
+        email_confirm: true,
+        user_metadata: {
+          name: nome,
+          role: 'student',
+          school_id: school_id || null,
+          student_number: matricula,
+          turma
+        }
+      });
+
+      if (authError) {
+        throw new Error(`Erro ao criar usuário: ${authError.message}`);
+      }
+
+      res.json({
+        success: true,
+        aluno: {
+          id: authUser.user.id,
+          nome,
+          matricula,
+          turma,
+          email
+        },
+        senha // Retornar senha apenas na criação
+      });
+    } catch (error: any) {
+      console.error("[STUDENTS] Erro ao criar aluno:", error);
+      res.status(500).json({ error: error.message || "Erro ao criar aluno" });
+    }
+  });
+
   // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma
   app.post("/api/admin/generate-gabaritos", async (req: Request, res: Response) => {
     try {
@@ -4459,27 +4560,27 @@ Para cada disciplina:
 
         const { width, height } = templatePage.getSize();
 
-        // Adicionar nome do aluno (posição aproximada do campo "Nome completo:")
+        // Adicionar nome do aluno (alinhado com turma e matrícula)
         templatePage.drawText(aluno.name || '', {
           x: 55,
-          y: height - 95, // Ajustar conforme template
-          size: 11,
+          y: height - 145, // Alinhado com turma e matrícula
+          size: 14,
           font,
         });
 
-        // Adicionar turma (campo "TURMA" no canto superior direito)
+        // Adicionar turma (campo em branco abaixo do cabeçalho "TURMA")
         templatePage.drawText(aluno.turma || '', {
           x: width - 180,
-          y: height - 115, // Ajustar conforme template
-          size: 10,
+          y: height - 145, // Campo em branco abaixo do cabeçalho
+          size: 14,
           font,
         });
 
-        // Adicionar matrícula (campo "MATRICULA/NÚMERO")
+        // Adicionar matrícula (campo em branco abaixo do cabeçalho "MATRICULA")
         templatePage.drawText(aluno.student_number || '', {
           x: width - 100,
-          y: height - 115, // Ajustar conforme template
-          size: 10,
+          y: height - 145, // Campo em branco abaixo do cabeçalho
+          size: 14,
           font,
         });
 
@@ -6080,24 +6181,24 @@ Para cada disciplina:
   // POST /api/schools - Criar escola
   app.post("/api/schools", async (req: Request, res: Response) => {
     try {
-      const { name, cnpj, address, city, state, contact_email, contact_phone, logo_url } = req.body;
+      const { name, slug } = req.body;
 
       if (!name) {
         return res.status(400).json({ error: "Nome da escola é obrigatório" });
       }
 
+      // Gerar slug automaticamente se não fornecido
+      const schoolSlug = slug || name.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
       const { data, error } = await supabaseAdmin
         .from("schools")
         .insert({
           name,
-          cnpj: cnpj || null,
-          address: address || null,
-          city: city || null,
-          state: state || null,
-          contact_email: contact_email || null,
-          contact_phone: contact_phone || null,
-          logo_url: logo_url || null,
-          active: true
+          slug: schoolSlug
         })
         .select()
         .single();
@@ -6114,18 +6215,15 @@ Para cada disciplina:
   app.put("/api/schools/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { name, cnpj, address, city, state, contact_email, contact_phone, logo_url, active } = req.body;
+      const { name, slug } = req.body;
 
-      const updates: any = { updated_at: new Date().toISOString() };
+      const updates: any = {};
       if (name !== undefined) updates.name = name;
-      if (cnpj !== undefined) updates.cnpj = cnpj;
-      if (address !== undefined) updates.address = address;
-      if (city !== undefined) updates.city = city;
-      if (state !== undefined) updates.state = state;
-      if (contact_email !== undefined) updates.contact_email = contact_email;
-      if (contact_phone !== undefined) updates.contact_phone = contact_phone;
-      if (logo_url !== undefined) updates.logo_url = logo_url;
-      if (active !== undefined) updates.active = active;
+      if (slug !== undefined) updates.slug = slug;
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "Nenhum campo para atualizar" });
+      }
 
       const { data, error } = await supabaseAdmin
         .from("schools")
@@ -6142,21 +6240,31 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/schools/:id - Desativar escola (soft delete)
+  // DELETE /api/schools/:id - Excluir escola
   app.delete("/api/schools/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      const { data, error } = await supabaseAdmin
+      // Verificar se há dados relacionados antes de excluir
+      const { count: examsCount } = await supabaseAdmin
+        .from("exams")
+        .select("*", { count: "exact", head: true })
+        .eq("school_id", id);
+
+      if (examsCount && examsCount > 0) {
+        return res.status(400).json({
+          error: "Não é possível excluir escola com provas cadastradas"
+        });
+      }
+
+      const { error } = await supabaseAdmin
         .from("schools")
-        .update({ active: false, updated_at: new Date().toISOString() })
-        .eq("id", id)
-        .select()
-        .single();
+        .delete()
+        .eq("id", id);
 
       if (error) throw error;
 
-      res.json({ success: true, message: "Escola desativada com sucesso" });
+      res.json({ success: true, message: "Escola excluída com sucesso" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -6251,7 +6359,7 @@ Para cada disciplina:
   // POST /api/simulados - Criar simulado vinculado a escola
   app.post("/api/simulados", async (req: Request, res: Response) => {
     try {
-      const { school_id, title, template_type, total_questions, applied_at, answer_key } = req.body;
+      const { school_id, title, template_type, total_questions, answer_key } = req.body;
 
       if (!school_id || !title) {
         return res.status(400).json({ error: "school_id e title são obrigatórios" });
@@ -6262,11 +6370,10 @@ Para cada disciplina:
         .insert({
           school_id,
           title,
-          template_type: template_type || "custom",
+          template_type: template_type || "ENEM",
           total_questions: total_questions || 90,
-          applied_at: applied_at || null,
           answer_key: answer_key || null,
-          status: "pending"
+          status: "active"
         })
         .select()
         .single();
