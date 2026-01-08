@@ -3,6 +3,8 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@shared/database.types';
 
+type UserRole = 'super_admin' | 'school_admin' | 'student';
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -11,12 +13,17 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, metadata: {
     name: string;
-    role: 'super_admin' | 'school_admin' | 'student';
+    role: UserRole;
     school_id?: string;
     student_number?: string;
     turma?: string;
   }) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  // Helper functions
+  hasRole: (role: UserRole | UserRole[]) => boolean;
+  isSuperAdmin: boolean;
+  isSchoolAdmin: boolean;
+  isStudent: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -116,6 +123,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }
 
+  // Helper: verificar se usuário tem determinada role
+  function hasRole(role: UserRole | UserRole[]): boolean {
+    if (!profile) return false;
+    if (Array.isArray(role)) {
+      return role.includes(profile.role as UserRole);
+    }
+    return profile.role === role;
+  }
+
+  // Computed booleans para fácil acesso
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const isSchoolAdmin = profile?.role === 'school_admin';
+  const isStudent = profile?.role === 'student';
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -125,6 +146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      hasRole,
+      isSuperAdmin,
+      isSchoolAdmin,
+      isStudent,
     }}>
       {children}
     </AuthContext.Provider>

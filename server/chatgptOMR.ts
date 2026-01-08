@@ -4,6 +4,67 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const CHATGPT_MODEL = process.env.CHATGPT_MODEL || "gpt-4o-mini";
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
+// 🔧 Configurações de retry para evitar rate limiting
+const GPT_TIMEOUT_MS = 30000; // 30 segundos timeout
+const GPT_MAX_RETRIES = 3;
+const GPT_INITIAL_DELAY_MS = 1000; // 1 segundo
+
+/**
+ * Faz fetch com timeout e retry exponencial
+ * Resolve problema de rate limiting da OpenAI após muitas chamadas
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = GPT_MAX_RETRIES,
+  initialDelay = GPT_INITIAL_DELAY_MS
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), GPT_TIMEOUT_MS);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // Se rate limited (429), fazer retry com backoff
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('retry-after');
+        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : initialDelay * Math.pow(2, attempt - 1);
+        console.warn(`[GPT] ⚠️ Rate limited (429). Tentativa ${attempt}/${maxRetries}. Aguardando ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+
+      // Se foi abort por timeout
+      if ((error as Error).name === 'AbortError') {
+        console.warn(`[GPT] ⏱️ Timeout (${GPT_TIMEOUT_MS}ms). Tentativa ${attempt}/${maxRetries}`);
+      } else {
+        console.warn(`[GPT] ❌ Erro na tentativa ${attempt}/${maxRetries}:`, (error as Error).message);
+      }
+
+      // Se ainda tem tentativas, esperar com backoff exponencial
+      if (attempt < maxRetries) {
+        const waitTime = initialDelay * Math.pow(2, attempt - 1);
+        console.log(`[GPT] 🔄 Aguardando ${waitTime}ms antes de tentar novamente...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+
+  throw lastError || new Error(`Falha após ${maxRetries} tentativas`);
+}
+
 export interface ChatGPTOMRResponse {
   answers: Array<string | null>;
   corrections?: Array<{
@@ -470,33 +531,34 @@ export async function extractHeaderInfoWithGPT(
     throw new Error("OPENAI_API_KEY is not set");
   }
 
-  const base64 = imageBuffer.toString("base64");
+  const sharp = (await import("sharp")).default;
 
-  const systemPrompt = `You are an expert at reading scanned Brazilian school answer sheets (gabaritos).
-Your task is to extract student information from the header area of the form.
-Return ONLY valid JSON, nothing else.`;
+  // 🚀 OTIMIZAÇÃO: Cortar só o header (top 40%) e reduzir para 768px de largura
+  const metadata = await sharp(imageBuffer).metadata();
+  const headerHeight = Math.round((metadata.height || 3400) * 0.40);
 
-  const userPrompt = `Extract the student information from this scanned answer sheet header.
+  const optimizedBuffer = await sharp(imageBuffer)
+    .extract({ left: 0, top: 0, width: metadata.width || 2400, height: headerHeight })
+    .resize(768, null, { fit: 'inside' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
 
-Look for these fields (they may be handwritten or printed):
-- "Nome completo" or "Nome": The student's full name
-- "Matrícula" or "Inscrição" or a number field: The student ID number
-- "Turma": The class/group identifier (like "A", "B", "C" or "1A", "2B")
-- "Série": The grade/year (like "1ª Série", "2ª Série", "3ª Série")
+  const base64 = optimizedBuffer.toString("base64");
+  const originalSize = imageBuffer.length;
+  const optimizedSize = optimizedBuffer.length;
+  console.log(`[GPT Header] 🚀 Imagem otimizada: ${Math.round(originalSize/1024)}KB → ${Math.round(optimizedSize/1024)}KB (${Math.round(optimizedSize/originalSize*100)}%)`);
 
-IMPORTANT:
-- Extract EXACTLY what is written, do not invent data
-- If a field is empty or illegible, use null
-- For numbers, extract only digits
-- Names should be in proper case (capitalize first letters)
+  // 🚀 PROMPT SIMPLIFICADO (menos tokens)
+  const systemPrompt = `Extract student info from Brazilian answer sheet header. Return ONLY JSON.`;
 
-Return this exact JSON format:
-{
-  "name": "STUDENT FULL NAME" or null,
-  "studentNumber": "12345678" or null,
-  "turma": "A" or null,
-  "serie": "1ª Série C" or null
-}`;
+  const userPrompt = `Extract from header:
+- name: student full name
+- studentNumber: matrícula/ID number (exact, with letters if any)
+- turma: class (A, B, 1A, etc)
+- serie: grade (1ª Série, 2ª Série)
+
+Return JSON: {"name":"...", "studentNumber":"...", "turma":"...", "serie":"..."}
+Use null if not visible.`;
 
   const messages = [
     { role: "system", content: systemPrompt },
@@ -504,7 +566,13 @@ Return this exact JSON format:
       role: "user",
       content: [
         { type: "text", text: userPrompt },
-        { type: "image_url", image_url: { url: `data:image/png;base64,${base64}` } },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:image/jpeg;base64,${base64}`,
+            detail: "low"  // 🚀 85 tokens fixo, processamento rápido
+          }
+        },
       ],
     },
   ];
@@ -512,12 +580,13 @@ Return this exact JSON format:
   const body = {
     model: CHATGPT_MODEL,
     messages,
-    max_tokens: 300,
+    max_tokens: 150,  // 🚀 Reduzido (JSON pequeno)
     temperature: 0,
   };
 
   try {
-    const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+    // 🔧 Usando fetchWithRetry para evitar rate limiting e timeout
+    const response = await fetchWithRetry(`${OPENAI_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -535,11 +604,16 @@ Return this exact JSON format:
     const data = await response.json();
     const rawText: string = data?.choices?.[0]?.message?.content?.trim?.() || "";
 
+    // 🔍 DEBUG: Log completo da resposta do GPT
+    console.log(`[GPT Header OCR] 🔍 Resposta GPT: "${rawText.substring(0, 200)}"`);
+
     // Parse JSON response
     let cleaned = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
 
     try {
       const parsed = JSON.parse(cleaned);
+      // 🔍 DEBUG: Log dos valores extraídos
+      console.log(`[GPT Header OCR] ✅ name="${parsed.name}" matricula="${parsed.studentNumber}" turma="${parsed.turma}"`);
       return {
         name: parsed.name || null,
         studentNumber: parsed.studentNumber || null,

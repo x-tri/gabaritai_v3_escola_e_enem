@@ -11,7 +11,7 @@ import archiver from "archiver";
 import type { StudentData, ExamStatistics } from "@shared/schema";
 import { officialGabaritoTemplate } from "@shared/schema";
 import { extractTextFromImageDeepSeek, checkOCRService } from "./deepseekOCR.js";
-// GPT Vision para OCR de cabeçalho (nome, matrícula, turma)
+// 🆕 Abordagem Híbrida: OMR (OpenCV) + Header (GPT Vision)
 import { extractHeaderInfoWithGPT } from "./chatgptOMR.js";
 import { registerDebugRoutes } from "./debugRoutes.js";
 import { gerarAnaliseDetalhada } from "./conteudosLoader.js";
@@ -26,6 +26,11 @@ import {
 } from "@shared/transforms";
 
 // Configuração dos serviços Python
+// Modal.com tem URLs separadas para cada endpoint
+const USE_MODAL = process.env.USE_MODAL === "true";
+const MODAL_OMR_HEALTH_URL = "https://xtribr--gabaritai-omr-health.modal.run";
+const MODAL_OMR_PROCESS_URL = "https://xtribr--gabaritai-omr-process-image.modal.run";
+
 const PYTHON_OMR_SERVICE_URL = process.env.PYTHON_OMR_URL || "http://localhost:5002";
 const PYTHON_TRI_SERVICE_URL = process.env.PYTHON_TRI_URL || "http://localhost:5003";
 const USE_PYTHON_OMR = process.env.USE_PYTHON_OMR !== "false"; // Ativado por padrão
@@ -33,7 +38,13 @@ const USE_PYTHON_TRI = process.env.USE_PYTHON_TRI !== "false"; // Ativado por pa
 
 // Log de configuração na inicialização
 console.log(`[CONFIG] 🔧 Configuração dos serviços Python:`);
-console.log(`[CONFIG]   - PYTHON_OMR_URL: ${PYTHON_OMR_SERVICE_URL}`);
+console.log(`[CONFIG]   - USE_MODAL: ${USE_MODAL}`);
+if (USE_MODAL) {
+  console.log(`[CONFIG]   - MODAL_OMR_HEALTH: ${MODAL_OMR_HEALTH_URL}`);
+  console.log(`[CONFIG]   - MODAL_OMR_PROCESS: ${MODAL_OMR_PROCESS_URL}`);
+} else {
+  console.log(`[CONFIG]   - PYTHON_OMR_URL: ${PYTHON_OMR_SERVICE_URL}`);
+}
 console.log(`[CONFIG]   - PYTHON_TRI_URL: ${PYTHON_TRI_SERVICE_URL}`);
 console.log(`[CONFIG]   - USE_PYTHON_OMR: ${USE_PYTHON_OMR}`);
 console.log(`[CONFIG]   - USE_PYTHON_TRI: ${USE_PYTHON_TRI}`);
@@ -51,6 +62,11 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
     pagina: number;
     resultado: {
       questoes: Record<string, string>;
+    };
+    header?: {
+      nome: string | null;
+      turma: string | null;
+      matricula: string | null;
     };
   };
   mensagem?: string;
@@ -73,14 +89,16 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
     // Adicionar configuração
     formData.append("config", config);
 
-    console.log(`[Python OMR] Enviando imagem de ${imageBuffer.length} bytes para página ${pageNumber} com config: ${config}...`);
-    
+    // Determinar URL baseado se usa Modal ou Fly.io
+    const omrUrl = USE_MODAL ? MODAL_OMR_PROCESS_URL : `${PYTHON_OMR_SERVICE_URL}/api/process-image`;
+    console.log(`[Python OMR] Enviando imagem de ${imageBuffer.length} bytes para página ${pageNumber} (${USE_MODAL ? 'Modal' : 'Fly.io'})...`);
+
     // Usar axios que trata form-data corretamente
     const response = await axios.post(
-      `${PYTHON_OMR_SERVICE_URL}/api/process-image`,
+      omrUrl,
       formData,
       {
-        timeout: 15000, // 15 segundos timeout (aumentado para PDFs grandes)
+        timeout: 120000, // 120 segundos timeout (Modal pode ter cold start)
         headers: {
           ...formData.getHeaders(),
         },
@@ -91,9 +109,10 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
 
     return response.data;
   } catch (error: any) {
-    console.error(`[Python OMR] ❌ ERRO ao chamar serviço em ${PYTHON_OMR_SERVICE_URL}:`, error.message || error);
+    const omrUrl = USE_MODAL ? MODAL_OMR_PROCESS_URL : `${PYTHON_OMR_SERVICE_URL}/api/process-image`;
+    console.error(`[Python OMR] ❌ ERRO ao chamar serviço em ${omrUrl}:`, error.message || error);
     console.error(`[Python OMR] Código:`, error.code || 'N/A');
-    console.error(`[Python OMR] URL tentada:`, `${PYTHON_OMR_SERVICE_URL}/api/process-image`);
+    console.error(`[Python OMR] URL tentada:`, omrUrl);
     if (error.response) {
       console.error(`[Python OMR] Response status:`, error.response.status);
       console.error(`[Python OMR] Response data:`, JSON.stringify(error.response.data));
@@ -110,16 +129,56 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
 }
 
 /**
+ * Chama o serviço Python OMR com retry e backoff exponencial
+ */
+async function callPythonOMRWithRetry(
+  imageBuffer: Buffer,
+  pageNumber: number,
+  config: string = "default",
+  maxRetries: number = 3
+): Promise<ReturnType<typeof callPythonOMR>> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await callPythonOMR(imageBuffer, pageNumber, config);
+    } catch (error: any) {
+      lastError = error;
+
+      if (attempt === maxRetries) {
+        console.error(`[OMR Retry] ❌ Todas as ${maxRetries} tentativas falharam para página ${pageNumber}`);
+        throw error;
+      }
+
+      const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+      console.warn(`[OMR Retry] ⚠️ Tentativa ${attempt}/${maxRetries} falhou para página ${pageNumber}. Aguardando ${delay}ms...`);
+      console.warn(`[OMR Retry] Erro: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError || new Error('Erro desconhecido no retry');
+}
+
+/**
  * Verifica se o serviço Python OMR está disponível
  */
 async function checkPythonOMRService(): Promise<boolean> {
   try {
-    const response = await fetch(`${PYTHON_OMR_SERVICE_URL}/health`, {
+    const healthUrl = USE_MODAL ? MODAL_OMR_HEALTH_URL : `${PYTHON_OMR_SERVICE_URL}/health`;
+    console.log(`[OMR Health] Verificando ${healthUrl} (${USE_MODAL ? 'Modal' : 'Fly.io'})...`);
+    const response = await fetch(healthUrl, {
       method: "GET",
-      signal: AbortSignal.timeout(3000), // 3 segundos timeout
+      signal: AbortSignal.timeout(30000), // 30 segundos timeout (Modal pode ter cold start)
     });
+    if (response.ok) {
+      console.log(`[OMR Health] ✅ Serviço disponível (status ${response.status})`);
+    } else {
+      console.warn(`[OMR Health] ⚠️ Serviço retornou status ${response.status}`);
+    }
     return response.ok;
-  } catch {
+  } catch (error) {
+    console.error(`[OMR Health] ❌ FALHA na conexão:`, error);
     return false;
   }
 }
@@ -570,8 +629,8 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     console.log(`${"=".repeat(70)}`);
     console.log(`[JOB ${jobId}] 📋 Configurações:`);
     console.log(`[JOB ${jobId}]   - Tipo de arquivo: ${isImage ? '🖼️ IMAGEM' : '📄 PDF'}`);
-    console.log(`[JOB ${jobId}]   - OCR Cabeçalho (GPT Vision): ${enableOcr ? '✅ Ativado' : '❌ Desativado'}`);
-    console.log(`[JOB ${jobId}]   - OMR: 🔥 Ultra (100% OpenCV, sem GPT)`);
+    console.log(`[JOB ${jobId}]   - OCR Cabeçalho: 🤖 GPT Vision (mais preciso)`);
+    console.log(`[JOB ${jobId}]   - OMR Bolhas: 🔥 OpenCV (rápido, sem custo)`);
     
     // PASSO 1: Verificar serviços
     console.log(`\n[JOB ${jobId}] ━━━ PASSO 1/5: VERIFICANDO SERVIÇOS ━━━`);
@@ -590,14 +649,11 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
       }
     }
     
-    // Verificar configuração do OCR (usando GPT Vision)
-    if (enableOcr) {
-      if (process.env.OPENAI_API_KEY) {
-        console.log(`[JOB ${jobId}] ✅ OCR via GPT Vision ativado`);
-      } else {
-        console.warn(`[JOB ${jobId}] ⚠️ OCR desativado: OPENAI_API_KEY não configurada`);
-        enableOcr = false;
-      }
+    // 🆕 Abordagem Híbrida: OpenCV (bolhas) + GPT Vision (header)
+    if (enableOcr && process.env.OPENAI_API_KEY) {
+      console.log(`[JOB ${jobId}] ✅ GPT Vision disponível para extração de header`);
+    } else {
+      console.warn(`[JOB ${jobId}] ⚠️ GPT Vision desativado (enableOcr=${enableOcr}, OPENAI_API_KEY=${process.env.OPENAI_API_KEY ? 'definida' : 'não definida'})`);
     }
     
     // PASSO 2: Carregar PDF ou processar imagem
@@ -644,8 +700,8 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     const { promisify } = await import("util");
     const execAsync = promisify(exec);
 
-    // Processar páginas em paralelo (máximo 3 por vez para não sobrecarregar)
-    const PARALLEL_PAGES = 3;
+    // Processar páginas sequencialmente (1 por vez para estabilidade)
+    const PARALLEL_PAGES = 1;
     const processPage = async (pageIndex: number) => {
       const pageNumber = pageIndex + 1;
       // Declarar variáveis no início da função para evitar "used before initialization"
@@ -694,20 +750,28 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
         console.log(`\n[JOB ${jobId}] ━━━ PASSO 3/5: OMR - PÁGINA ${pageNumber} ━━━`);
         
         let omrResult;
+        let pythonHeader: { nome: string | null; turma: string | null; matricula: string | null } | undefined;
+
         if (usePythonOMR) {
           try {
             console.log(`[JOB ${jobId}] 🔵 Chamando Python OMR para página ${pageNumber}...`);
             const startOMR = Date.now();
             // Determinar config baseado no template
             const omrConfig = template === "modelo_menor" ? "modelo_menor" : "default";
-            const pythonResult = await callPythonOMR(imageBuffer, pageNumber, omrConfig);
-            
+            const pythonResult = await callPythonOMRWithRetry(imageBuffer, pageNumber, omrConfig);
+
             omrResult = convertPythonOMRToInternal(pythonResult, officialGabaritoTemplate.totalQuestions);
             const omrDuration = Date.now() - startOMR;
-            
+
+            // 🆕 Extrair header do Python OMR (Tesseract OCR)
+            pythonHeader = pythonResult.pagina?.header;
+
             if (pythonResult.status === "sucesso" && pythonResult.pagina) {
               const detected = omrResult.detectedAnswers.filter(a => a).length;
               console.log(`[JOB ${jobId}] ✅ Python OMR (${omrConfig}): ${detected}/90 respostas detectadas (${omrDuration}ms)`);
+              if (pythonHeader) {
+                console.log(`[JOB ${jobId}] 📋 Header OCR: nome="${pythonHeader.nome}", turma="${pythonHeader.turma}", matricula="${pythonHeader.matricula}"`);
+              }
             } else {
               throw new Error(pythonResult.mensagem || "Erro desconhecido no serviço Python OMR");
             }
@@ -750,54 +814,35 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
         console.log(`[JOB ${jobId}] 📋 Primeiras 10: ${first10}`);
         
         console.log(`[JOB ${jobId}] ✅ OMR Ultra concluído para página ${pageNumber}`);
-        console.log(`[JOB ${jobId}] 🔥 100% OMR Ultra - Sem GPT!`);
+        console.log(`[JOB ${jobId}] 🔥 OMR: OpenCV | Header: GPT Vision`);
 
-        // Extract text fields using GPT Vision (nome, matrícula, turma)
+        // 🆕 Abordagem Híbrida: GPT Vision para header (mais preciso que Tesseract)
         let studentTurma: string | undefined;
-        if (enableOcr) {
+
+        if (enableOcr && process.env.OPENAI_API_KEY) {
           try {
-            console.log(`[JOB ${jobId}] 🔍 Extraindo dados do cabeçalho com GPT Vision...`);
-            const headerInfo = await extractHeaderInfoWithGPT(imageBuffer);
+            console.log(`[JOB ${jobId}] 🤖 Extraindo header com GPT Vision...`);
+            const headerResult = await extractHeaderInfoWithGPT(imageBuffer);
 
-            // Extrair nome
-            if (headerInfo.name) {
-              const rawName = headerInfo.name.trim();
-              // Validate: must be 3+ chars, have at least one word with 2+ letters, not be form text
-              const words = rawName.split(/\s+/).filter(w => w.length >= 2);
-              const isValidName = rawName.length >= 3 &&
-                                  words.length >= 1 &&
-                                  !rawName.toLowerCase().includes('resposta') &&
-                                  !rawName.toLowerCase().includes('exame') &&
-                                  !rawName.toLowerCase().includes('simulado') &&
-                                  !rawName.toLowerCase().includes('nacional') &&
-                                  !rawName.toLowerCase().includes('unidade');
-              if (isValidName) {
-                studentName = rawName.substring(0, 100);
-                console.log(`[JOB ${jobId}] ✅ Nome (GPT Vision): "${studentName}"`);
-              }
+            if (headerResult.name) {
+              studentName = headerResult.name.substring(0, 100);
+              console.log(`[JOB ${jobId}] ✅ Nome (GPT): "${studentName}"`);
             }
 
-            // Extrair matrícula
-            if (headerInfo.studentNumber) {
-              const extractedNumber = headerInfo.studentNumber.trim().replace(/\D/g, '');
-              if (extractedNumber.length >= 1) {
-                studentNumber = extractedNumber.substring(0, 20);
-                console.log(`[JOB ${jobId}] ✅ Matrícula (GPT Vision): "${studentNumber}"`);
-              }
+            if (headerResult.studentNumber) {
+              studentNumber = headerResult.studentNumber.substring(0, 20);
+              console.log(`[JOB ${jobId}] ✅ Matrícula (GPT): "${studentNumber}"`);
             }
 
-            // Extrair turma (combina série + turma se disponível)
-            if (headerInfo.turma || headerInfo.serie) {
-              studentTurma = [headerInfo.serie, headerInfo.turma].filter(Boolean).join(' ').trim();
-              if (studentTurma) {
-                console.log(`[JOB ${jobId}] ✅ Turma (GPT Vision): "${studentTurma}"`);
-              }
+            if (headerResult.turma) {
+              studentTurma = headerResult.turma;
+              console.log(`[JOB ${jobId}] ✅ Turma (GPT): "${studentTurma}"`);
             }
-
-            console.log(`[JOB ${jobId}] 📋 GPT Vision raw: ${headerInfo.rawText.substring(0, 200)}...`);
-          } catch (ocrError) {
-            console.log(`[JOB ${jobId}] ⚠️ OCR (GPT Vision): erro, usando valores padrão:`, ocrError);
+          } catch (gptError) {
+            console.warn(`[JOB ${jobId}] ⚠️ Erro GPT Vision header:`, gptError);
           }
+        } else {
+          console.log(`[JOB ${jobId}] ⚠️ OCR desativado ou OPENAI_API_KEY não configurada`);
         }
 
         // VALIDAÇÃO FINAL ANTES DE CRIAR finalAnswers
@@ -886,21 +931,29 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     };
 
     // Processar páginas em lotes paralelos
+    // 🔧 Delay entre batches para gerenciamento de memória no servidor
+    const BATCH_DELAY_MS = 500; // 500ms entre batches
+
     for (let batchStart = 0; batchStart < pageCount; batchStart += PARALLEL_PAGES) {
       const batchEnd = Math.min(batchStart + PARALLEL_PAGES, pageCount);
       const batch = Array.from({ length: batchEnd - batchStart }, (_, i) => batchStart + i);
-      
-      // Atualizar progresso do lote
-      job.currentPage = batchEnd;
-      job.progress = Math.round((batchEnd / pageCount) * 100);
-      
-      console.log(`[JOB ${jobId}] Processando páginas ${batchStart + 1}-${batchEnd}/${pageCount} em paralelo...`);
-      
+      const batchNumber = Math.floor(batchStart / PARALLEL_PAGES) + 1;
+
+      // Mostrar início do batch
+      console.log(`[JOB ${jobId}] Processando páginas ${batchStart + 1}-${batchEnd}/${pageCount} em paralelo (batch ${batchNumber})...`);
+
       // Processar lote em paralelo
       const results = await Promise.all(batch.map(processPage));
-      
-      // Adicionar resultados ao job
-      for (const result of results) {
+
+      // Adicionar resultados ao job e ATUALIZAR PROGRESSO APÓS CADA RESULTADO
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const pageNum = batchStart + i + 1;
+
+        // Atualizar progresso APÓS processar cada página
+        job.currentPage = pageNum;
+        job.progress = Math.round((pageNum / pageCount) * 100);
+
         if (result.student) {
           job.students.push(result.student);
         }
@@ -911,6 +964,12 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
         if (result.pageResult) {
           job.lastPageResult = result.pageResult;
         }
+      }
+
+      // 🔧 Delay entre batches para evitar rate limiting (exceto no último)
+      if (batchEnd < pageCount) {
+        console.log(`[JOB ${jobId}] ⏳ Aguardando ${BATCH_DELAY_MS}ms antes do próximo batch...`);
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
     }
 
@@ -4675,6 +4734,229 @@ Para cada disciplina:
       console.error("[STUDENT_ANSWERS] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar resultados do aluno",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/student-dashboard-details/:studentId/:examId - Dados detalhados para dashboard do aluno
+  app.get("/api/student-dashboard-details/:studentId/:examId", async (req: Request, res: Response) => {
+    try {
+      const { studentId, examId } = req.params;
+
+      // 1. Buscar dados do aluno para este exam
+      const { data: studentResult, error: studentError } = await supabaseAdmin
+        .from("student_answers")
+        .select("*")
+        .eq("student_id", studentId)
+        .eq("exam_id", examId)
+        .single();
+
+      if (studentError || !studentResult) {
+        return res.status(404).json({ error: "Resultado do aluno não encontrado" });
+      }
+
+      // 2. Buscar dados do exam (gabarito, question_contents)
+      const { data: exam, error: examError } = await supabaseAdmin
+        .from("exams")
+        .select("id, title, template_type, total_questions, answer_key, question_contents")
+        .eq("id", examId)
+        .single();
+
+      if (examError || !exam) {
+        return res.status(404).json({ error: "Prova não encontrada" });
+      }
+
+      // 3. Buscar TODOS os resultados da turma para este exam (para calcular dificuldade e comparação)
+      const { data: allResults, error: allError } = await supabaseAdmin
+        .from("student_answers")
+        .select("id, student_name, student_number, turma, answers, correct_answers, tri_score, tri_lc, tri_ch, tri_cn, tri_mt")
+        .eq("exam_id", examId);
+
+      if (allError) {
+        console.error("[STUDENT_DASHBOARD_DETAILS] Erro ao buscar turma:", allError);
+      }
+
+      const turmaResults = allResults || [];
+      const totalStudents = turmaResults.length;
+      const answerKey = exam.answer_key || [];
+      const questionContents = exam.question_contents || [];
+
+      // 4. Calcular dificuldade de cada questão (% de acertos da turma)
+      const questionDifficulty: Array<{
+        questionNumber: number;
+        area: string;
+        content: string;
+        correctRate: number;
+        difficulty: 'easy' | 'medium' | 'hard';
+        totalCorrect: number;
+        totalStudents: number;
+      }> = [];
+
+      for (let i = 0; i < answerKey.length; i++) {
+        const correctAnswer = answerKey[i];
+        if (!correctAnswer || correctAnswer.trim() === '') continue;
+
+        let correctCount = 0;
+        turmaResults.forEach(student => {
+          const studentAnswer = student.answers?.[i];
+          if (studentAnswer && studentAnswer.toUpperCase() === correctAnswer.toUpperCase()) {
+            correctCount++;
+          }
+        });
+
+        const correctRate = totalStudents > 0 ? (correctCount / totalStudents) * 100 : 0;
+
+        // Determinar área baseado no índice (ENEM padrão: 0-44 LC, 45-89 CH, 90-134 CN, 135-179 MT)
+        let area = 'LC';
+        if (i >= 45 && i < 90) area = 'CH';
+        else if (i >= 90 && i < 135) area = 'CN';
+        else if (i >= 135) area = 'MT';
+
+        // Buscar conteúdo da questão se disponível
+        const qContent = questionContents.find((q: any) => q.questionNumber === i + 1);
+
+        questionDifficulty.push({
+          questionNumber: i + 1,
+          area,
+          content: qContent?.content || '',
+          correctRate: Math.round(correctRate * 10) / 10,
+          difficulty: correctRate >= 70 ? 'easy' : correctRate >= 49 ? 'medium' : 'hard',
+          totalCorrect: correctCount,
+          totalStudents
+        });
+      }
+
+      // 5. Calcular questões erradas pelo aluno
+      const studentWrongQuestions: Array<{
+        questionNumber: number;
+        area: string;
+        content: string;
+        difficulty: 'easy' | 'medium' | 'hard';
+        correctRate: number;
+        studentAnswer: string;
+        correctAnswer: string;
+      }> = [];
+
+      for (let i = 0; i < answerKey.length; i++) {
+        const correctAnswer = answerKey[i];
+        const studentAnswer = studentResult.answers?.[i];
+
+        if (!correctAnswer || correctAnswer.trim() === '') continue;
+
+        // Verificar se errou (respondeu mas não acertou)
+        if (studentAnswer && studentAnswer.toUpperCase() !== correctAnswer.toUpperCase()) {
+          const qDiff = questionDifficulty.find(q => q.questionNumber === i + 1);
+          studentWrongQuestions.push({
+            questionNumber: i + 1,
+            area: qDiff?.area || 'LC',
+            content: qDiff?.content || '',
+            difficulty: qDiff?.difficulty || 'medium',
+            correctRate: qDiff?.correctRate || 0,
+            studentAnswer: studentAnswer.toUpperCase(),
+            correctAnswer: correctAnswer.toUpperCase()
+          });
+        }
+      }
+
+      // 6. Calcular resumo por dificuldade
+      const difficultyStats = {
+        easy: { total: 0, correct: 0, wrong: 0 },
+        medium: { total: 0, correct: 0, wrong: 0 },
+        hard: { total: 0, correct: 0, wrong: 0 }
+      };
+
+      questionDifficulty.forEach(q => {
+        const studentAnswer = studentResult.answers?.[q.questionNumber - 1];
+        const correctAnswer = answerKey[q.questionNumber - 1];
+
+        difficultyStats[q.difficulty].total++;
+
+        if (studentAnswer && correctAnswer) {
+          if (studentAnswer.toUpperCase() === correctAnswer.toUpperCase()) {
+            difficultyStats[q.difficulty].correct++;
+          } else {
+            difficultyStats[q.difficulty].wrong++;
+          }
+        }
+      });
+
+      // 7. Calcular conteúdos com mais erros
+      const contentErrors: Record<string, { content: string; area: string; errors: number; total: number }> = {};
+
+      studentWrongQuestions.forEach(q => {
+        const key = q.content || `Questão ${q.questionNumber}`;
+        if (!contentErrors[key]) {
+          contentErrors[key] = { content: key, area: q.area, errors: 0, total: 0 };
+        }
+        contentErrors[key].errors++;
+      });
+
+      // Adicionar questões corretas para calcular total
+      questionDifficulty.forEach(q => {
+        const key = q.content || `Questão ${q.questionNumber}`;
+        if (!contentErrors[key]) {
+          contentErrors[key] = { content: key, area: q.area, errors: 0, total: 0 };
+        }
+        contentErrors[key].total++;
+      });
+
+      const topErrorContents = Object.values(contentErrors)
+        .filter(c => c.errors > 0)
+        .sort((a, b) => (b.errors / b.total) - (a.errors / a.total))
+        .slice(0, 10);
+
+      // 8. Calcular estatísticas da turma por área
+      const turmaStats = {
+        LC: { min: 1000, max: 0, avg: 0, count: 0, sum: 0 },
+        CH: { min: 1000, max: 0, avg: 0, count: 0, sum: 0 },
+        CN: { min: 1000, max: 0, avg: 0, count: 0, sum: 0 },
+        MT: { min: 1000, max: 0, avg: 0, count: 0, sum: 0 }
+      };
+
+      turmaResults.forEach(r => {
+        ['LC', 'CH', 'CN', 'MT'].forEach(area => {
+          const tri = area === 'LC' ? r.tri_lc : area === 'CH' ? r.tri_ch : area === 'CN' ? r.tri_cn : r.tri_mt;
+          if (tri && tri > 0) {
+            const stats = turmaStats[area as keyof typeof turmaStats];
+            stats.min = Math.min(stats.min, tri);
+            stats.max = Math.max(stats.max, tri);
+            stats.sum += tri;
+            stats.count++;
+          }
+        });
+      });
+
+      // Calcular médias
+      Object.keys(turmaStats).forEach(area => {
+        const stats = turmaStats[area as keyof typeof turmaStats];
+        stats.avg = stats.count > 0 ? Math.round((stats.sum / stats.count) * 10) / 10 : 0;
+        if (stats.min === 1000) stats.min = 0;
+      });
+
+      res.json({
+        success: true,
+        studentResult,
+        exam: {
+          id: exam.id,
+          title: exam.title,
+          templateType: exam.template_type,
+          totalQuestions: exam.total_questions
+        },
+        answerKey,
+        questionContents,
+        questionDifficulty,
+        studentWrongQuestions,
+        difficultyStats,
+        topErrorContents,
+        turmaStats,
+        turmaSize: totalStudents
+      });
+
+    } catch (error: any) {
+      console.error("[STUDENT_DASHBOARD_DETAILS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao buscar detalhes do dashboard",
         details: error.message
       });
     }

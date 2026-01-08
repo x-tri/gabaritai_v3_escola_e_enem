@@ -1431,13 +1431,12 @@ export default function Home() {
             });
             
             setProblemReport(report);
-            
-            // Mostrar relatório se houver problemas
+
+            // Log se houver problemas (NÃO abre modal automaticamente - usuário clica no botão)
             if (report.problemPages.length > 0 || report.totalDouble > 0 || report.totalBlank > 10) {
-              addProcessingLog(`📋 ${report.problemPages.length} página(s) com problemas detectados`, 'warning');
-              setProblemReportOpen(true);
+              addProcessingLog(`📋 ${report.problemPages.length} página(s) com problemas detectados - clique em "Relatório" para ver`, 'warning');
             }
-            
+
             // Toast com alerta se houver problemas
             if (report.problemPages.length > 0) {
               toast({
@@ -3516,21 +3515,31 @@ export default function Home() {
       template: appMode === "escola" ? `Escola - ${numQuestions}Q` : (predefinedTemplates[selectedTemplateIndex]?.name || 'Personalizado'),
       local: appMode === "escola" ? (projetoEscolaAtual?.nome || 'Escola') : 'RN',
       // Salvar dados completos para recarregar depois
-      students: alunosAtuais.map(s => ({
-        id: s.id,
-        studentNumber: s.studentNumber,
-        studentName: s.studentName,
-        answers: s.answers,
-        pageNumber: s.pageNumber,
-        turma: s.turma,
-        score: s.score,
-        correctAnswers: s.correctAnswers,
-        wrongAnswers: s.wrongAnswers,
-        areaScores: s.areaScores,
-        areaCorrectAnswers: s.areaCorrectAnswers,
-        confidence: s.confidence,
-        triScore: s.triScore
-      })),
+      // IMPORTANTE: Mesclar triScoresByArea em cada aluno para salvar TRI por área no banco
+      students: alunosAtuais.map(s => {
+        const areaTri = triScoresByArea.get(s.id);
+        return {
+          id: s.id,
+          studentNumber: s.studentNumber,
+          studentName: s.studentName,
+          answers: s.answers,
+          pageNumber: s.pageNumber,
+          turma: s.turma,
+          score: s.score,
+          correctAnswers: s.correctAnswers,
+          wrongAnswers: s.wrongAnswers,
+          // Usar TRI por área do Map triScoresByArea (chaves LC, CH, CN, MT)
+          areaScores: areaTri ? {
+            lc: areaTri.LC ?? areaTri.lc,
+            ch: areaTri.CH ?? areaTri.ch,
+            cn: areaTri.CN ?? areaTri.cn,
+            mt: areaTri.MT ?? areaTri.mt,
+          } : s.areaScores,
+          areaCorrectAnswers: s.areaCorrectAnswers,
+          confidence: s.confidence,
+          triScore: triScoresAtuais.get(s.id) ?? s.triScore
+        };
+      }),
       answerKey: [...answerKey],
       triScores: Array.from(triScoresAtuais.entries()),
       triScoresByArea: Array.from(triScoresByArea.entries()),
@@ -4477,6 +4486,15 @@ export default function Home() {
       if (!saveResp.ok) {
         throw new Error(`Falha ao salvar projeto: ${saveResp.status}`);
       }
+
+      // 🔴 FIX: Atualizar estado local do React com os dados mesclados
+      // Sem isso, a UI continuava mostrando os dados antigos (N/F)
+      console.log("[MERGE] Atualizando estado local com dados mesclados...");
+      setStudents(alunosMesclados);
+      setAnswerKey(gabaritoCompleto);
+      setNumQuestions(180);
+      setTriScores(triScoresMapFinal);
+      setTriScoresByArea(triScoresByAreaMapFinal);
 
       // Atualizar o projetoId no state se foi passado como parâmetro
       if (projetoIdParam && projetoIdParam !== projetoId) {
