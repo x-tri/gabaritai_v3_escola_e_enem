@@ -106,7 +106,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Gabaritai</CardTitle>
+          <CardTitle className="text-2xl">XTRI PROVAS</CardTitle>
           <CardDescription>Entre com sua conta</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

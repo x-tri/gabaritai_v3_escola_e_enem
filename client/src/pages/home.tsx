@@ -5855,9 +5855,9 @@ export default function Home() {
             </div>
             <div className="flex flex-col">
               <h2 className="text-lg font-bold text-white tracking-tight">
-                GabaritAI
+                XTRI PROVAS
               </h2>
-              <p className="text-xs font-semibold text-blue-100 uppercase tracking-wider">Powered by X-TRI</p>
+              <p className="text-xs font-semibold text-blue-100 uppercase tracking-wider">Sistema de Correção de Provas</p>
             </div>
           </div>
         </div>

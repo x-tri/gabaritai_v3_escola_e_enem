@@ -1084,7 +1084,7 @@ export default function AdminPage() {
               </Link>
               <div>
                 <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                  GabaritAI Admin
+                  XTRI PROVAS Admin
                 </h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Painel Administrativo

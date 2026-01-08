@@ -14,10 +14,10 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-            GabaritAI
+            XTRI PROVAS
           </h1>
           <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-6">
-            Powered by X-TRI
+            Sistema de Correção de Provas
           </p>
           <p className="text-lg text-slate-600 dark:text-slate-400">
             Selecione o modo de trabalho

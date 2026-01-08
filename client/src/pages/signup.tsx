@@ -76,7 +76,7 @@ export default function SignupPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Criar Conta</CardTitle>
-          <CardDescription>Cadastre-se no Gabaritai</CardDescription>
+          <CardDescription>Cadastre-se no XTRI PROVAS</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
