@@ -4926,7 +4926,8 @@ Para cada disciplina:
     try {
       const { studentId } = req.params;
 
-      const { data, error } = await supabaseAdmin
+      // Tentar buscar por student_id primeiro
+      let { data, error } = await supabaseAdmin
         .from("student_answers")
         .select(`
           *,
@@ -4941,6 +4942,34 @@ Para cada disciplina:
           error: "Erro ao buscar resultados",
           details: error.message
         });
+      }
+
+      // Se não encontrou por student_id, tentar por student_number
+      if (!data || data.length === 0) {
+        console.log(`[STUDENT_ANSWERS] Sem resultados por student_id, buscando por student_number...`);
+
+        // Buscar profile para pegar student_number
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("student_number")
+          .eq("id", studentId)
+          .single();
+
+        if (profile?.student_number) {
+          const { data: resultsByNumber } = await supabaseAdmin
+            .from("student_answers")
+            .select(`
+              *,
+              exams (id, title, template_type, created_at)
+            `)
+            .eq("student_number", profile.student_number)
+            .order("created_at", { ascending: false });
+
+          if (resultsByNumber && resultsByNumber.length > 0) {
+            data = resultsByNumber;
+            console.log(`[STUDENT_ANSWERS] Encontrados ${data.length} resultados por student_number: ${profile.student_number}`);
+          }
+        }
       }
 
       res.json({
@@ -4963,15 +4992,45 @@ Para cada disciplina:
     try {
       const { studentId, examId } = req.params;
 
-      // 1. Buscar dados do aluno para este exam
-      const { data: studentResult, error: studentError } = await supabaseAdmin
+      // 1. Buscar dados do aluno para este exam (primeiro por student_id)
+      let studentResult = null;
+
+      const { data: resultById, error: errorById } = await supabaseAdmin
         .from("student_answers")
         .select("*")
         .eq("student_id", studentId)
         .eq("exam_id", examId)
         .single();
 
-      if (studentError || !studentResult) {
+      if (resultById) {
+        studentResult = resultById;
+      } else {
+        // Fallback: buscar pelo student_number do profile
+        console.log(`[STUDENT_DASHBOARD_DETAILS] Buscando por student_id falhou, tentando por student_number...`);
+
+        // Buscar profile para pegar student_number
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("student_number")
+          .eq("id", studentId)
+          .single();
+
+        if (profile?.student_number) {
+          const { data: resultByNumber } = await supabaseAdmin
+            .from("student_answers")
+            .select("*")
+            .eq("student_number", profile.student_number)
+            .eq("exam_id", examId)
+            .single();
+
+          if (resultByNumber) {
+            studentResult = resultByNumber;
+            console.log(`[STUDENT_DASHBOARD_DETAILS] Encontrado por student_number: ${profile.student_number}`);
+          }
+        }
+      }
+
+      if (!studentResult) {
         return res.status(404).json({ error: "Resultado do aluno não encontrado" });
       }
 
@@ -4998,8 +5057,45 @@ Para cada disciplina:
 
       const turmaResults = allResults || [];
       const totalStudents = turmaResults.length;
-      const answerKey = exam.answer_key || [];
-      const questionContents = exam.question_contents || [];
+      let answerKey = exam.answer_key || [];
+      let questionContents = exam.question_contents || [];
+
+      console.log(`[STUDENT_DASHBOARD_DETAILS] examId=${examId}`);
+      console.log(`[STUDENT_DASHBOARD_DETAILS] totalStudents=${totalStudents}`);
+      console.log(`[STUDENT_DASHBOARD_DETAILS] answerKey.length=${answerKey.length}`);
+
+      // Se answerKey estiver vazio, tentar buscar do projeto mais recente
+      if (answerKey.length === 0) {
+        console.log(`[STUDENT_DASHBOARD_DETAILS] answerKey vazio, buscando de projetos...`);
+
+        // Buscar projeto mais recente com mesmo número de alunos
+        const { data: projetos } = await supabaseAdmin
+          .from('projetos')
+          .select('answer_key, question_contents, students')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (projetos && projetos.length > 0) {
+          // Encontrar projeto com número similar de alunos
+          const projetoMatch = projetos.find(p => {
+            const pStudents = (p.students as any[]) || [];
+            return Math.abs(pStudents.length - totalStudents) <= 2;
+          });
+
+          if (projetoMatch) {
+            answerKey = projetoMatch.answer_key || [];
+            questionContents = projetoMatch.question_contents || [];
+            console.log(`[STUDENT_DASHBOARD_DETAILS] Encontrado answerKey do projeto: ${answerKey.length} questões`);
+            console.log(`[STUDENT_DASHBOARD_DETAILS] questionContents.length=${questionContents.length}`);
+            if (questionContents.length > 0) {
+              console.log(`[STUDENT_DASHBOARD_DETAILS] questionContents[0]=`, JSON.stringify(questionContents[0]));
+            }
+          }
+        }
+      }
+
+      // Debug: verificar questionContents
+      console.log(`[STUDENT_DASHBOARD_DETAILS] Final questionContents.length=${questionContents.length}`);
 
       // 4. Calcular dificuldade de cada questão (% de acertos da turma)
       const questionDifficulty: Array<{
