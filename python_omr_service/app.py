@@ -62,7 +62,11 @@ MARKED_THRESHOLD = 50.0      # % escuro absoluto para considerar marcado
 BLANK_THRESHOLD = 45.0       # Se a mais escura < 45%, questao em branco
 RELATIVE_DIFF = 8.0          # Diferenca minima entre 1a e 2a para ser marcacao clara
 DOUBLE_MARK_DIFF = 5.0       # Se diff < 5% entre 1a e 2a (ambas altas), dupla marcacao
-DARK_PIXEL_THRESHOLD = 180   # Valor de pixel para considerar escuro
+DARK_PIXEL_THRESHOLD = 160   # Valor de pixel para considerar escuro (era 180, ajustado para pegar marcas mais claras)
+
+# Flag para salvar imagens de debug
+DEBUG_MODE = os.getenv('OMR_DEBUG', 'false').lower() == 'true'
+DEBUG_OUTPUT_DIR = os.getenv('OMR_DEBUG_DIR', '/tmp/omr_debug')
 
 
 # ============================================================
@@ -73,8 +77,14 @@ def find_corner_markers(gray):
     """Encontra os 4 quadrados pretos de alinhamento."""
     h, w = gray.shape
 
-    # Binarizar para encontrar quadrados pretos
-    _, binary = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
+    # MELHORIA: Usar binarizacao adaptativa (Otsu) em vez de threshold fixo
+    # Isso funciona melhor com diferentes qualidades de scan e iluminacao
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Aplicar operacoes morfologicas para limpar ruido
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
     # Encontrar contornos
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -83,23 +93,24 @@ def find_corner_markers(gray):
     squares = []
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < 1000 or area > 50000:
+        if area < 800 or area > 80000:  # Ampliado range de area
             continue
 
         x, y, cw, ch = cv2.boundingRect(cnt)
         aspect = cw / ch if ch > 0 else 0
 
-        # Quadrado tem aspect ratio ~1
-        if 0.6 < aspect < 1.6:
+        # Quadrado tem aspect ratio ~1 (ampliado para scans rotacionados)
+        if 0.5 < aspect < 2.0:
             peri = cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
+            approx = cv2.approxPolyDP(cnt, 0.05 * peri, True)  # Tolerancia aumentada
 
             if len(approx) >= 4:
                 center_x = x + cw // 2
                 center_y = y + ch // 2
                 squares.append({
                     'center': (center_x, center_y),
-                    'area': area
+                    'area': area,
+                    'bbox': (x, y, cw, ch)
                 })
 
     if len(squares) < 4:
@@ -342,9 +353,10 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     # Valores de referencia template vazio: mean=37%, std=1.0, diff=0.5-1.0
 
     # 1. QUESTAO EM BRANCO
-    #    - Se std baixo (<2.0) E diff baixo (<2.0), ninguem marcou
+    #    - Se std baixo (<1.5) E diff baixo (<1.5), ninguem marcou
     #    - Template vazio tem std~1.0 e diff~0.5-1.0
-    if std_dark < 2.0 and diff < 2.0:
+    #    MELHORIA: Thresholds reduzidos para evitar falsos "em branco"
+    if std_dark < 1.5 and diff < 1.5:
         return None
 
     # 2. DUPLA MARCACAO
@@ -352,25 +364,90 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     if std_dark > 3.0:
         z_best = (best['darkness'] - mean_dark) / std_dark
         z_second = (second['darkness'] - mean_dark) / std_dark
-        if z_best > 1.0 and z_second > 1.0 and diff < 3.0:
+        if z_best > 1.0 and z_second > 1.0 and diff < 2.5:
             return 'X'
 
     # 3. MARCACAO CLARA (criterio principal)
-    #    - Diferenca significativa entre 1a e 2a (>= 3.0)
-    if diff >= 3.0:
+    #    - Diferenca significativa entre 1a e 2a (>= 2.0)
+    #    MELHORIA: Reduzido de 3.0 para 2.0 para pegar marcas mais leves
+    if diff >= 2.0:
         return best['label']
 
     # 4. MARCACAO POR Z-SCORE (para variacao alta)
     #    - A melhor esta muito acima da media (outlier)
-    if std_dark >= 2.0:
+    #    MELHORIA: Criterios relaxados para melhor deteccao
+    if std_dark >= 1.5:
         z_score_best = (best['darkness'] - mean_dark) / std_dark
-        if z_score_best > 1.5 and diff >= 2.0:
+        if z_score_best > 1.2 and diff >= 1.5:
             return best['label']
+
+    # 5. FALLBACK: Se a melhor bolha esta significativamente mais escura que a media
+    #    NOVO: Criterio adicional para marcas muito leves
+    if best['darkness'] > mean_dark + 3.0 and diff >= 1.0:
+        return best['label']
 
     return None
 
 
-def process_omr(img):
+def save_debug_image(img, gray, answers, scale_x, scale_y, page_num=1):
+    """Salva imagem de debug com marcacoes visuais para diagnostico."""
+    if not DEBUG_MODE:
+        return None
+
+    try:
+        os.makedirs(DEBUG_OUTPUT_DIR, exist_ok=True)
+
+        # Criar copia colorida para desenhar
+        if len(img.shape) == 2:
+            debug_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        else:
+            debug_img = img.copy()
+
+        # Desenhar posicoes das bolhas
+        for col_idx, col_x in enumerate(COLUMNS_X):
+            for row_idx, row_y in enumerate(Y_POSITIONS):
+                q_num = col_idx * 15 + row_idx + 1
+                answer = answers[q_num - 1] if q_num <= len(answers) else None
+
+                for opt_idx in range(5):
+                    x = int((col_x + opt_idx * OPTION_SPACING) * scale_x)
+                    y = int(row_y * scale_y)
+                    r = int(BUBBLE_RADIUS * scale_x)
+
+                    opt_label = chr(65 + opt_idx)
+
+                    # Verde = resposta detectada, Vermelho = nao marcada, Amarelo = dupla
+                    if answer == opt_label:
+                        color = (0, 255, 0)  # Verde
+                        thickness = 3
+                    elif answer == 'X':
+                        color = (0, 255, 255)  # Amarelo
+                        thickness = 2
+                    else:
+                        color = (0, 0, 255)  # Vermelho
+                        thickness = 1
+
+                    cv2.circle(debug_img, (x, y), r, color, thickness)
+
+                # Numero da questao
+                x_text = int((col_x - 30) * scale_x)
+                y_text = int(row_y * scale_y) + 5
+                cv2.putText(debug_img, str(q_num), (x_text, y_text),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
+
+        # Salvar
+        timestamp = int(time.time() * 1000)
+        filename = f"debug_page{page_num}_{timestamp}.png"
+        filepath = os.path.join(DEBUG_OUTPUT_DIR, filename)
+        cv2.imwrite(filepath, debug_img)
+        logger.info(f"Debug image saved: {filepath}")
+        return filepath
+    except Exception as e:
+        logger.warning(f"Failed to save debug image: {e}")
+        return None
+
+
+def process_omr(img, page_num=1):
     """Processa uma imagem e retorna as respostas."""
     start_time = time.time()
 
@@ -405,12 +482,16 @@ def process_omr(img):
 
     elapsed = time.time() - start_time
 
+    # Salvar imagem de debug se habilitado
+    debug_path = save_debug_image(img, processed, answers, scale_x, scale_y, page_num)
+
     return {
         'answers': answers,
         'answered': answered,
         'blank': blank,
         'double_marked': double_marked,
-        'elapsed_ms': round(elapsed * 1000, 2)
+        'elapsed_ms': round(elapsed * 1000, 2),
+        'debug_image': debug_path
     }
 
 
@@ -454,11 +535,11 @@ def process_image():
         # Converter para OpenCV (BGR)
         img_array = np.array(pil_img)[:, :, ::-1].copy()
 
-        # Processar OMR
-        result = process_omr(img_array)
-
         # Numero da pagina
         page_num = int(request.form.get('page', 1))
+
+        # Processar OMR
+        result = process_omr(img_array, page_num)
 
         logger.info(f"Pagina {page_num}: {result['answered']}/90 respondidas | {result['blank']} branco | {result['double_marked']} dupla | {result['elapsed_ms']}ms")
 
