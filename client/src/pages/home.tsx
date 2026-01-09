@@ -390,6 +390,7 @@ export default function Home() {
     // Dados completos para recarregar a aplicação
     students?: StudentData[];
     answerKey?: string[];
+    questionContents?: Array<{ questionNumber: number; answer: string; content: string }>;
     triScores?: Array<[string, number]>; // Array de [studentId, triScore]
     triScoresByArea?: Array<[string, Record<string, number>]>; // Array de [studentId, {LC, CH, CN, MT}]
     selectedTemplateIndex?: number;
@@ -3541,11 +3542,12 @@ export default function Home() {
         };
       }),
       answerKey: [...answerKey],
+      questionContents: [...questionContents],
       triScores: Array.from(triScoresAtuais.entries()),
       triScoresByArea: Array.from(triScoresByArea.entries()),
       selectedTemplateIndex: selectedTemplateIndex
     };
-    
+
     console.log('[Histórico] Salvando avaliação:', avaliacao);
     
     // Tentar salvar no backend primeiro
@@ -3668,7 +3670,8 @@ export default function Home() {
     // Restaurar dados
     setStudents(avaliacao.students);
     setAnswerKey(avaliacao.answerKey);
-    
+    setQuestionContents(avaliacao.questionContents || []);
+
     // Restaurar TRI scores
     if (avaliacao.triScores) {
       const triMap = new Map<string, number>(avaliacao.triScores);
@@ -13225,6 +13228,7 @@ export default function Home() {
                                   triScore: 0
                                 })),
                                 answerKey: [],
+                                questionContents: [],
                                 triScores: [],
                                 triScoresByArea: [],
                                 selectedTemplateIndex: 0
