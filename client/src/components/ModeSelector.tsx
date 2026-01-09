@@ -1,13 +1,142 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { School, GraduationCap, FileText, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { School, GraduationCap, FileText, Settings, Building2, ChevronLeft, Loader2 } from "lucide-react";
 
 export type AppMode = "selector" | "escola" | "enem";
 
+export interface SchoolOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface ModeSelectorProps {
-  onSelect: (mode: "escola" | "enem") => void;
+  onSelect: (mode: "escola" | "enem", schoolId?: string, schoolName?: string) => void;
 }
 
 export function ModeSelector({ onSelect }: ModeSelectorProps) {
+  const [step, setStep] = useState<"mode" | "school">("mode");
+  const [selectedMode, setSelectedMode] = useState<"escola" | "enem" | null>(null);
+  const [schools, setSchools] = useState<SchoolOption[]>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>("");
+  const [loadingSchools, setLoadingSchools] = useState(false);
+
+  // Carregar escolas quando entrar no passo de seleção de escola
+  useEffect(() => {
+    if (step === "school") {
+      setLoadingSchools(true);
+      fetch("/api/schools")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.schools) {
+            setSchools(data.schools);
+          }
+        })
+        .catch(console.error)
+        .finally(() => setLoadingSchools(false));
+    }
+  }, [step]);
+
+  const handleModeSelect = (mode: "escola" | "enem") => {
+    setSelectedMode(mode);
+    setStep("school");
+  };
+
+  const handleConfirm = () => {
+    if (!selectedMode) return;
+    const school = schools.find((s) => s.id === selectedSchoolId);
+    onSelect(selectedMode, selectedSchoolId || undefined, school?.name);
+  };
+
+  // Tela de seleção de escola
+  if (step === "school") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-100 dark:from-slate-900 dark:to-slate-800 p-4">
+        <div className="max-w-md w-full">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="mx-auto mb-4 p-4 bg-blue-100 dark:bg-blue-900/30 rounded-full w-fit">
+              <Building2 className="h-12 w-12 text-blue-600 dark:text-blue-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">
+              Selecionar Escola
+            </h1>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Escolha a escola para esta correção
+            </p>
+          </div>
+
+          {/* Card de Seleção */}
+          <Card className="bg-white dark:bg-slate-800 border-2">
+            <CardContent className="pt-6">
+              {loadingSchools ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                  <span className="ml-2 text-slate-600 dark:text-slate-400">Carregando escolas...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Escola
+                    </label>
+                    <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione uma escola..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {schools.map((school) => (
+                          <SelectItem key={school.id} value={school.id}>
+                            {school.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {schools.length === 0 && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
+                      Nenhuma escola cadastrada. Acesse a área de Administração para criar escolas.
+                    </p>
+                  )}
+
+                  <div className="flex gap-3 mt-6">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setStep("mode");
+                        setSelectedMode(null);
+                        setSelectedSchoolId("");
+                      }}
+                      className="flex-1"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Voltar
+                    </Button>
+                    <Button
+                      onClick={handleConfirm}
+                      disabled={!selectedSchoolId}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    >
+                      Iniciar Correção
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Modo selecionado */}
+          <div className="text-center mt-4 text-sm text-slate-500 dark:text-slate-400">
+            Modo: <span className="font-medium">{selectedMode === "enem" ? "ENEM" : "Provas da Escola"}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-100 dark:from-slate-900 dark:to-slate-800 p-4">
       <div className="max-w-4xl w-full">
@@ -29,7 +158,7 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
           {/* PROVAS DA ESCOLA */}
           <Card
             className="cursor-pointer hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] border-2 hover:border-green-500 bg-white dark:bg-slate-800"
-            onClick={() => onSelect("escola")}
+            onClick={() => handleModeSelect("escola")}
           >
             <CardHeader className="text-center pb-2">
               <div className="mx-auto mb-4 p-4 bg-green-100 dark:bg-green-900/30 rounded-full w-fit">
@@ -77,7 +206,7 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
           {/* ENEM */}
           <Card
             className="cursor-pointer hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] border-2 hover:border-blue-500 bg-white dark:bg-slate-800"
-            onClick={() => onSelect("enem")}
+            onClick={() => handleModeSelect("enem")}
           >
             <CardHeader className="text-center pb-2">
               <div className="mx-auto mb-4 p-4 bg-blue-100 dark:bg-blue-900/30 rounded-full w-fit">

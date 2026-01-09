@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Link } from "wouter";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings } from "lucide-react";
+import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings, Building2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, ScatterChart, Scatter, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
@@ -178,6 +178,8 @@ export default function Home() {
   const { user } = useAuth();
   const [mounted, setMounted] = useState(false);
   const [appMode, setAppMode] = useState<AppMode>("selector");
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
+  const [selectedSchoolName, setSelectedSchoolName] = useState<string | null>(null);
 
   // ============================================================================
   // 📚 PROJETO ESCOLA - Estado para múltiplas provas/disciplinas
@@ -5828,7 +5830,11 @@ export default function Home() {
   // TELA DE SELEÇÃO DE MODO (PROVAS DA ESCOLA vs ENEM)
   // =====================================================================
   if (appMode === "selector") {
-    return <ModeSelector onSelect={setAppMode} />;
+    return <ModeSelector onSelect={(mode, schoolId, schoolName) => {
+      setAppMode(mode);
+      setSelectedSchoolId(schoolId || null);
+      setSelectedSchoolName(schoolName || null);
+    }} />;
   }
 
   return (
@@ -5892,9 +5898,13 @@ export default function Home() {
                     setTriScores(new Map());
                     setTriScoresByArea(new Map());
                     setCurrentExamConfiguration(null);
+                    setSelectedSchoolId(null);
+                    setSelectedSchoolName(null);
                     setAppMode("selector");
                   }
                 } else {
+                  setSelectedSchoolId(null);
+                  setSelectedSchoolName(null);
                   setAppMode("selector");
                 }
               }}
@@ -5905,6 +5915,12 @@ export default function Home() {
           {appMode === "escola" && currentExamConfiguration && (
             <div className="mt-2 text-xs text-blue-200/80">
               {currentExamConfiguration.name} ({currentExamConfiguration.totalQuestions}q)
+            </div>
+          )}
+          {selectedSchoolName && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-blue-100/90 bg-white/10 rounded px-2 py-1">
+              <Building2 className="h-3 w-3" />
+              <span className="truncate">{selectedSchoolName}</span>
             </div>
           )}
         </div>
@@ -13472,7 +13488,11 @@ ${problemReport.problemPages.map(p => `
             <DialogTitle>📤 Publicar Resultados para Alunos</DialogTitle>
             <DialogDescription>
               Os alunos poderão visualizar seus resultados no dashboard.
-              Informe um nome para identificar esta avaliação.
+              {selectedSchoolName && (
+                <span className="block mt-1 font-medium text-blue-600 dark:text-blue-400">
+                  Escola: {selectedSchoolName}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -13517,6 +13537,7 @@ ${problemReport.problemPages.map(p => `
                   // Preparar dados para envio
                   const payload = {
                     titulo: publishTitle.trim(),
+                    school_id: selectedSchoolId,
                     templateType: predefinedTemplates[selectedTemplateIndex]?.name || "Customizado",
                     gabarito: answerKey,
                     questionContents: questionContents.length > 0 ? questionContents : undefined,
