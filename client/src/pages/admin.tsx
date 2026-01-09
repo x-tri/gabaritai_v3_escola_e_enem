@@ -15,6 +15,7 @@ import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, C
 import TrashIcon from '@/components/ui/trash-icon';
 import { Link } from 'wouter';
 import { CsvUploader, StudentRow } from '@/components/CsvUploader';
+import { ProfileMenu } from '@/components/ProfileMenu';
 
 interface ImportResult {
   matricula: string;
@@ -1092,13 +1093,7 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                {profile?.name}
-              </span>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sair
-              </Button>
+              <ProfileMenu />
             </div>
           </div>
         </div>

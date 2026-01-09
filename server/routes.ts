@@ -4056,7 +4056,8 @@ Para cada disciplina:
                 role: 'student',
                 student_number: matricula,
                 turma: turma,
-                school_id: schoolId || null
+                school_id: schoolId || null,
+                must_change_password: !existingUser // Forçar troca de senha apenas para novos usuários
               }, {
                 onConflict: 'id'
               });
@@ -4478,6 +4479,12 @@ Para cada disciplina:
       if (authError) {
         throw new Error(`Erro ao criar usuário: ${authError.message}`);
       }
+
+      // Marcar como deve trocar senha no primeiro acesso
+      await supabaseAdmin
+        .from('profiles')
+        .update({ must_change_password: true })
+        .eq('id', authUser.user.id);
 
       res.json({
         success: true,
@@ -5334,6 +5341,95 @@ Para cada disciplina:
         error: "Erro ao buscar profile",
         details: error.message
       });
+    }
+  });
+
+  // PUT /api/profile/update - Atualizar perfil do usuário
+  app.put("/api/profile/update", async (req: Request, res: Response) => {
+    try {
+      const { userId, name } = req.body;
+
+      if (!userId || !name) {
+        return res.status(400).json({ error: "userId e name são obrigatórios" });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("profiles")
+        .update({ name })
+        .eq("id", userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[PROFILE] Erro ao atualizar:", error);
+        return res.status(500).json({ error: "Erro ao atualizar perfil", details: error.message });
+      }
+
+      res.json({ success: true, profile: data });
+
+    } catch (error: any) {
+      console.error("[PROFILE] Erro:", error);
+      res.status(500).json({ error: "Erro ao atualizar perfil", details: error.message });
+    }
+  });
+
+  // POST /api/profile/change-password - Alterar senha do usuário
+  app.post("/api/profile/change-password", async (req: Request, res: Response) => {
+    try {
+      const { userId, currentPassword, newPassword, isForced } = req.body;
+
+      if (!userId || !newPassword) {
+        return res.status(400).json({ error: "userId e newPassword são obrigatórios" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
+      }
+
+      // Buscar o perfil do usuário para pegar o email
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("email")
+        .eq("id", userId)
+        .single();
+
+      if (profileError || !profile) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+
+      // Se não é forçado, verificar senha atual
+      if (!isForced && currentPassword) {
+        const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+          email: profile.email,
+          password: currentPassword
+        });
+
+        if (signInError) {
+          return res.status(400).json({ error: "Senha atual incorreta" });
+        }
+      }
+
+      // Atualizar a senha usando admin API
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: newPassword
+      });
+
+      if (updateError) {
+        console.error("[PROFILE] Erro ao atualizar senha:", updateError);
+        return res.status(500).json({ error: "Erro ao alterar senha", details: updateError.message });
+      }
+
+      // Marcar must_change_password como false
+      await supabaseAdmin
+        .from("profiles")
+        .update({ must_change_password: false })
+        .eq("id", userId);
+
+      res.json({ success: true, message: "Senha alterada com sucesso" });
+
+    } catch (error: any) {
+      console.error("[PROFILE] Erro:", error);
+      res.status(500).json({ error: "Erro ao alterar senha", details: error.message });
     }
   });
 

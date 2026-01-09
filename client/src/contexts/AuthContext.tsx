@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@shared/database.types';
+import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 
 type UserRole = 'super_admin' | 'school_admin' | 'student';
 
@@ -19,6 +20,7 @@ interface AuthContextType {
     turma?: string;
   }) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   // Helper functions
   hasRole: (role: UserRole | UserRole[]) => boolean;
   isSuperAdmin: boolean;
@@ -33,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showForceChangePassword, setShowForceChangePassword] = useState(false);
 
   useEffect(() => {
     // Buscar sessão inicial
@@ -75,6 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
       if (data && data.id) {
         setProfile(data);
+        // Verificar se precisa forçar troca de senha
+        if (data.must_change_password) {
+          setShowForceChangePassword(true);
+        }
       } else {
         console.log('Profile não encontrado para userId:', userId);
         setProfile(null);
@@ -84,6 +91,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function refreshProfile() {
+    if (user) {
+      await fetchProfile(user.id);
     }
   }
 
@@ -137,6 +150,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSchoolAdmin = profile?.role === 'school_admin';
   const isStudent = profile?.role === 'student';
 
+  const handleForcePasswordChangeSuccess = async () => {
+    setShowForceChangePassword(false);
+    // Recarregar profile para atualizar must_change_password
+    if (user) {
+      await fetchProfile(user.id);
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -146,12 +167,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      refreshProfile,
       hasRole,
       isSuperAdmin,
       isSchoolAdmin,
       isStudent,
     }}>
       {children}
+      {/* Modal de troca de senha obrigatória */}
+      {profile && showForceChangePassword && (
+        <ChangePasswordModal
+          open={showForceChangePassword}
+          onSuccess={handleForcePasswordChangeSuccess}
+          isForced={true}
+          userId={profile.id}
+        />
+      )}
     </AuthContext.Provider>
   );
 }
