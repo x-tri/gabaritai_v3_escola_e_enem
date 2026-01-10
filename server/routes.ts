@@ -637,16 +637,17 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     console.log(`\n[JOB ${jobId}] ━━━ PASSO 1/5: VERIFICANDO SERVIÇOS ━━━`);
     
     let usePythonOMR = USE_PYTHON_OMR;
+    const omrServiceUrl = USE_MODAL ? MODAL_OMR_HEALTH_URL : PYTHON_OMR_SERVICE_URL;
     if (usePythonOMR) {
-      console.log(`[JOB ${jobId}] 🔍 Verificando Python OMR em ${PYTHON_OMR_SERVICE_URL}...`);
+      console.log(`[JOB ${jobId}] 🔍 Verificando Python OMR em ${omrServiceUrl} (Modal: ${USE_MODAL})...`);
       const pythonOMRAvailable = await checkPythonOMRService();
       if (!pythonOMRAvailable) {
-        console.warn(`[JOB ${jobId}] ⚠️  Serviço Python OMR não está disponível em ${PYTHON_OMR_SERVICE_URL}`);
-        console.warn(`[JOB ${jobId}] Execute: cd python_omr_service && python app.py`);
+        console.warn(`[JOB ${jobId}] ⚠️  Serviço Python OMR não está disponível em ${omrServiceUrl}`);
+        console.warn(`[JOB ${jobId}] ${USE_MODAL ? 'Verifique o deploy do Modal' : 'Execute: cd python_omr_service && python app.py'}`);
         console.warn(`[JOB ${jobId}] Usando OMR TypeScript como fallback...`);
         usePythonOMR = false;
       } else {
-        console.log(`[JOB ${jobId}] ✅ Python OMR disponível e pronto!`);
+        console.log(`[JOB ${jobId}] ✅ Python OMR disponível e pronto! (${USE_MODAL ? 'Modal' : 'Local'})`);
       }
     }
     
