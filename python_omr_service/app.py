@@ -452,7 +452,24 @@ def process_omr(img, page_num=1):
     start_time = time.time()
 
     # 1. Corrigir rotação/inclinação (deskew)
-    img = deskew_image(img)
+    original_shape = img.shape[:2]
+    deskew_result = deskew_image(img)
+
+    # Verificar se alinhamento foi bem-sucedido
+    if isinstance(deskew_result, tuple):
+        img = deskew_result[0]
+        aligned_by_markers = True
+    else:
+        img = deskew_result
+        aligned_by_markers = False
+
+    new_shape = img.shape[:2]
+
+    # Log detalhado do alinhamento
+    if aligned_by_markers:
+        logger.info(f"✅ Alinhamento SUCESSO: {original_shape} -> {new_shape} (marcadores detectados)")
+    else:
+        logger.warning(f"⚠️ Alinhamento FALLBACK: {original_shape} -> {new_shape} (marcadores NÃO encontrados)")
 
     # 2. Converter para grayscale
     if len(img.shape) == 3:
@@ -463,6 +480,14 @@ def process_omr(img, page_num=1):
     h, w = gray.shape
     scale_x = w / REF_WIDTH
     scale_y = h / REF_HEIGHT
+
+    # Validar se as dimensões estão próximas do esperado
+    expected_ratio = REF_WIDTH / REF_HEIGHT  # ~2.12
+    actual_ratio = w / h
+    ratio_diff = abs(expected_ratio - actual_ratio) / expected_ratio * 100
+
+    if ratio_diff > 20:
+        logger.warning(f"⚠️ Proporção da imagem diverge {ratio_diff:.1f}% do esperado (escala x={scale_x:.2f}, y={scale_y:.2f})")
 
     # 3. Pre-processar (CLAHE + gamma)
     processed = preprocess_image(gray)

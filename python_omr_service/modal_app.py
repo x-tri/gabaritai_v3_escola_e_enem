@@ -64,15 +64,20 @@ def omr_api():
 
     # Lazy import of processing module
     def get_process_omr(force_debug=False):
-        sys.path.insert(0, "/app")
-        if force_debug:
-            # Need to reload the module to pick up the new env var
-            import importlib
-            import app as omr_app
-            importlib.reload(omr_app)
-            return omr_app.process_omr
-        from app import process_omr
-        return process_omr
+        try:
+            sys.path.insert(0, "/app")
+            if force_debug:
+                # Need to reload the module to pick up the new env var
+                import importlib
+                import app as omr_app
+                importlib.reload(omr_app)
+                return omr_app.process_omr
+            from app import process_omr
+            return process_omr
+        except ImportError as e:
+            raise RuntimeError(f"❌ Falha ao importar app.py: {e}. Arquivos em /app: {os.listdir('/app') if os.path.exists('/app') else 'DIR_NOT_FOUND'}")
+        except Exception as e:
+            raise RuntimeError(f"❌ Erro ao carregar OMR: {e}")
 
     @fastapi_app.post("/process-image")
     async def process_image(

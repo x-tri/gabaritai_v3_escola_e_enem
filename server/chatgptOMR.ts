@@ -228,7 +228,8 @@ export async function callChatGPTVisionOMR(
     temperature: 0,
   };
 
-  const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+  // 🔧 Usando fetchWithRetry para evitar rate limiting e timeout
+  const response = await fetchWithRetry(`${OPENAI_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -484,7 +485,8 @@ The "answers" array MUST have EXACTLY ${totalQuestions} elements.`;
     temperature: 0,
   };
 
-  const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+  // 🔧 Usando fetchWithRetry para evitar rate limiting e timeout
+  const response = await fetchWithRetry(`${OPENAI_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
