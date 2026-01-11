@@ -1678,6 +1678,79 @@ export async function registerRoutes(
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // ⚠️ ENDPOINT TEMPORÁRIO - Promover xandao@gmail.com para super_admin
+  // REMOVER APÓS USO!
+  app.get("/api/fix-admin-xandao", async (req: Request, res: Response) => {
+    try {
+      const targetEmail = "xandao@gmail.com";
+
+      // Buscar profile pelo email
+      const { data: profile, error: fetchError } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("email", targetEmail)
+        .single();
+
+      if (fetchError || !profile) {
+        // Se não existe profile, buscar usuário auth e criar profile
+        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+        const authUser = authUsers?.users?.find(u => u.email === targetEmail);
+
+        if (!authUser) {
+          return res.status(404).json({
+            error: "Usuário não encontrado no Auth nem no Profiles",
+            email: targetEmail
+          });
+        }
+
+        // Criar profile para o usuário auth existente
+        const { error: createError } = await supabaseAdmin
+          .from("profiles")
+          .insert({
+            id: authUser.id,
+            email: targetEmail,
+            name: "Admin XTRI",
+            role: "super_admin"
+          });
+
+        if (createError) {
+          return res.status(500).json({ error: createError.message });
+        }
+
+        return res.json({
+          success: true,
+          action: "created",
+          message: "Profile criado como super_admin",
+          userId: authUser.id
+        });
+      }
+
+      // Atualizar role para super_admin
+      const { error: updateError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: "super_admin" })
+        .eq("email", targetEmail);
+
+      if (updateError) {
+        return res.status(500).json({ error: updateError.message });
+      }
+
+      res.json({
+        success: true,
+        action: "updated",
+        message: "Role atualizada para super_admin",
+        user: {
+          id: profile.id,
+          email: profile.email,
+          oldRole: profile.role,
+          newRole: "super_admin"
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Endpoint TRI V2 - Status/Info (GET)
   app.get("/api/calculate-tri-v2", async (req: Request, res: Response) => {
     try {
@@ -4036,9 +4109,13 @@ Para cada disciplina:
     return `${matricula}@${schoolSlug}.gabaritai.com`;
   }
 
-  // POST /api/admin/import-students - Importar alunos em lote
+  // POST /api/admin/import-students - Importar alunos em lote (TABELA STUDENTS)
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // ✅ NOVA ABORDAGEM: Insere na tabela 'students' separada do auth.users
+  // Alunos podem criar conta posteriormente para acessar dashboard
+  // v2 - 2024-01-11 - Usando tabela students
   app.post("/api/admin/import-students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    console.log("[IMPORT v2] Iniciando importação na tabela STUDENTS");
     try {
       const { students, schoolId } = req.body as {
         students: ImportStudentInput[];
@@ -4048,12 +4125,20 @@ Para cada disciplina:
       if (!students || !Array.isArray(students) || students.length === 0) {
         res.status(400).json({
           error: "Lista de alunos é obrigatória",
-          details: "Envie um array de objetos com matricula, nome, turma e email (opcional)"
+          details: "Envie um array de objetos com matricula, nome, turma"
         });
         return;
       }
 
-      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s)...`);
+      if (!schoolId) {
+        res.status(400).json({
+          error: "schoolId é obrigatório",
+          details: "Especifique a escola para importar os alunos"
+        });
+        return;
+      }
+
+      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s) para escola ${schoolId}...`);
 
       const results: ImportStudentResult[] = [];
       let created = 0;
@@ -4061,133 +4146,89 @@ Para cada disciplina:
       let errors = 0;
 
       for (const student of students) {
-        const { matricula, nome, turma, email: providedEmail } = student;
+        const { matricula, nome, turma } = student;
 
         // Validação básica
-        if (!matricula || !nome || !turma) {
+        if (!matricula || !nome) {
           results.push({
             matricula: matricula || 'N/A',
             nome: nome || 'N/A',
             turma: turma || 'N/A',
-            email: providedEmail || 'N/A',
+            email: '',
             senha: '',
             status: 'error',
-            message: 'Campos obrigatórios faltando (matricula, nome, turma)'
+            message: 'Campos obrigatórios faltando (matricula, nome)'
           });
           errors++;
           continue;
         }
 
-        // Gerar email se não fornecido
-        const email = providedEmail || generateEmail(matricula);
-        const senha = generatePassword(matricula);
-
         try {
-          // Verificar se já existe um profile com essa matrícula
-          const { data: existingProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('id, email')
-            .eq('student_number', matricula)
+          // Verificar se já existe um aluno com essa matrícula na escola
+          const { data: existingStudent } = await supabaseAdmin
+            .from('students')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('matricula', matricula)
             .maybeSingle();
 
-          if (existingProfile) {
-            // Atualizar profile existente
+          if (existingStudent) {
+            // Atualizar aluno existente
             const { error: updateError } = await supabaseAdmin
-              .from('profiles')
+              .from('students')
               .update({
                 name: nome,
-                turma: turma,
-                school_id: schoolId || null
+                turma: turma || null
               })
-              .eq('id', existingProfile.id);
+              .eq('id', existingStudent.id);
 
             if (updateError) {
-              throw new Error(`Erro ao atualizar profile: ${updateError.message}`);
+              throw new Error(`Erro ao atualizar: ${updateError.message}`);
             }
 
             results.push({
               matricula,
               nome,
-              turma,
-              email: existingProfile.email,
-              senha: '(senha mantida)',
+              turma: turma || '',
+              email: '',
+              senha: '',
               status: 'updated',
-              message: 'Dados atualizados (senha não alterada)'
+              message: 'Dados atualizados'
             });
             updated++;
-            console.log(`[IMPORT] Aluno ${matricula} atualizado`);
           } else {
-            // Verificar se já existe usuário com esse email
-            const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-            const existingUser = existingUsers?.users?.find(u => u.email === email);
-
-            let userId: string;
-
-            if (existingUser) {
-              // Usar usuário existente
-              userId = existingUser.id;
-              console.log(`[IMPORT] Usuário ${email} já existe, usando ID existente`);
-            } else {
-              // Criar novo usuário no Supabase Auth
-              const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-                email,
-                password: senha,
-                email_confirm: true, // Confirmar email automaticamente
-                user_metadata: {
-                  name: nome,
-                  role: 'student',
-                  student_number: matricula,
-                  turma: turma
-                }
-              });
-
-              if (authError) {
-                throw new Error(`Erro ao criar usuário: ${authError.message}`);
-              }
-
-              userId = authData.user.id;
-              console.log(`[IMPORT] Usuário criado: ${email}`);
-            }
-
-            // Criar profile
-            const { error: profileError } = await supabaseAdmin
-              .from('profiles')
-              .upsert({
-                id: userId,
-                email,
+            // Criar novo aluno na tabela students
+            const { error: insertError } = await supabaseAdmin
+              .from('students')
+              .insert({
+                school_id: schoolId,
+                matricula,
                 name: nome,
-                role: 'student',
-                student_number: matricula,
-                turma: turma,
-                school_id: schoolId || null,
-                must_change_password: !existingUser // Forçar troca de senha apenas para novos usuários
-              }, {
-                onConflict: 'id'
+                turma: turma || null
               });
 
-            if (profileError) {
-              throw new Error(`Erro ao criar profile: ${profileError.message}`);
+            if (insertError) {
+              throw new Error(`Erro ao criar: ${insertError.message}`);
             }
 
             results.push({
               matricula,
               nome,
-              turma,
-              email,
-              senha: existingUser ? '(usuário já existia)' : senha,
+              turma: turma || '',
+              email: '',
+              senha: '',
               status: 'created',
-              message: existingUser ? 'Profile criado para usuário existente' : 'Aluno criado com sucesso'
+              message: 'Aluno cadastrado'
             });
             created++;
-            console.log(`[IMPORT] Profile criado para ${matricula}`);
           }
         } catch (error: any) {
-          console.error(`[IMPORT] Erro ao processar ${matricula}:`, error.message);
+          console.error(`[IMPORT] Erro ${matricula}:`, error.message);
           results.push({
             matricula,
             nome,
-            turma,
-            email,
+            turma: turma || '',
+            email: '',
             senha: '',
             status: 'error',
             message: error.message
@@ -4196,7 +4237,7 @@ Para cada disciplina:
         }
       }
 
-      console.log(`[IMPORT] Concluído: ${created} criados, ${updated} atualizados, ${errors} erros`);
+      console.log(`[IMPORT] ✅ Concluído: ${created} criados, ${updated} atualizados, ${errors} erros`);
 
       res.json({
         success: errors === 0,
@@ -4206,7 +4247,11 @@ Para cada disciplina:
           updated,
           errors
         },
-        results
+        results,
+        info: {
+          message: "Alunos importados com sucesso!",
+          loginInstructions: "Alunos podem criar conta para acessar resultados via matrícula"
+        }
       });
     } catch (error: any) {
       console.error("[IMPORT] Erro geral:", error);
@@ -4217,26 +4262,31 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/admin/students - Listar alunos com filtros
+  // GET /api/admin/students - Listar alunos de uma escola (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      const { turma, search, page = '1', limit = '50' } = req.query;
+      const { school_id, turma, search, page = '1', limit = '50' } = req.query;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
 
       let query = supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('*', { count: 'exact' })
-        .eq('role', 'student')
+        .eq('school_id', school_id as string)
         .order('name', { ascending: true });
 
       // Filtro por turma
-      if (turma && typeof turma === 'string') {
+      if (turma && typeof turma === 'string' && turma !== 'all') {
         query = query.eq('turma', turma);
       }
 
       // Busca por nome ou matrícula
       if (search && typeof search === 'string') {
-        query = query.or(`name.ilike.%${search}%,student_number.ilike.%${search}%`);
+        query = query.or(`name.ilike.%${search}%,matricula.ilike.%${search}%`);
       }
 
       // Paginação
@@ -4254,16 +4304,23 @@ Para cada disciplina:
 
       // Buscar lista de turmas únicas para o filtro
       const { data: turmasData } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('turma')
-        .eq('role', 'student')
+        .eq('school_id', school_id as string)
         .not('turma', 'is', null);
 
       const turmas = [...new Set(turmasData?.map(t => t.turma).filter(Boolean))].sort();
 
+      // Mapear para formato esperado pelo frontend (student_number = matricula)
+      const students = (data || []).map(s => ({
+        ...s,
+        student_number: s.matricula,
+        email: `${s.matricula}@escola.gabaritai.com`
+      }));
+
       res.json({
         success: true,
-        students: data || [],
+        students,
         pagination: {
           total: count || 0,
           page: pageNum,
@@ -4273,13 +4330,230 @@ Para cada disciplina:
         turmas
       });
     } catch (error: any) {
-      console.error("[STUDENTS] Erro ao listar:", error);
+      console.error("[GET STUDENTS]", error);
       res.status(500).json({
-        error: "Erro ao listar alunos",
+        error: "Erro ao buscar alunos",
         details: error.message
       });
     }
   });
+
+  // GET /api/admin/students/:schoolId/turmas - Listar turmas de uma escola
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.get("/api/admin/students/:schoolId/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { schoolId } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from('students')
+        .select('turma')
+        .eq('school_id', schoolId)
+        .not('turma', 'is', null);
+
+      if (error) {
+        throw new Error(`Erro ao buscar turmas: ${error.message}`);
+      }
+
+      // Extrair turmas únicas
+      const turmas = [...new Set(data?.map(s => s.turma).filter(Boolean))].sort();
+
+      res.json({
+        success: true,
+        turmas
+      });
+    } catch (error: any) {
+      console.error("[GET TURMAS]", error);
+      res.status(500).json({
+        error: "Erro ao buscar turmas",
+        details: error.message
+      });
+    }
+  });
+
+  // DELETE /api/admin/students/:id - Deletar aluno da tabela students
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.delete("/api/admin/students/:id", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Buscar dados do aluno para log
+      const { data: student } = await supabaseAdmin
+        .from('students')
+        .select('matricula, name')
+        .eq('id', id)
+        .single();
+
+      if (!student) {
+        res.status(404).json({ error: "Aluno não encontrado" });
+        return;
+      }
+
+      // Deletar aluno
+      const { error: deleteError } = await supabaseAdmin
+        .from('students')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) {
+        throw new Error(`Erro ao deletar: ${deleteError.message}`);
+      }
+
+      console.log(`[DELETE STUDENT] Aluno ${student.name} (${student.matricula}) deletado`);
+
+      res.json({
+        success: true,
+        message: `Aluno ${student.name} deletado com sucesso`
+      });
+    } catch (error: any) {
+      console.error("[DELETE STUDENT]", error);
+      res.status(500).json({
+        error: "Erro ao deletar aluno",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/admin/students/:id/reset-password - Resetar senha do aluno (Auth)
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  // NOTA: Funciona apenas para alunos que já criaram conta (profile_id linkado)
+  app.post("/api/admin/students/:id/reset-password", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+
+    try {
+      const { id } = req.params;
+
+      // Buscar dados do aluno
+      const { data: student } = await supabaseAdmin
+        .from('profiles')
+        .select('name, student_number, email')
+        .eq('id', id)
+        .single();
+
+      if (!student) {
+        res.status(404).json({ error: "Aluno não encontrado" });
+        return;
+      }
+
+      // Resetar senha no Auth
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+        password: DEFAULT_PASSWORD,
+        user_metadata: {
+          must_change_password: true
+        }
+      });
+
+      if (authError) {
+        throw new Error(`Erro ao resetar senha: ${authError.message}`);
+      }
+
+      console.log(`[RESET] Senha resetada para ${student.name} (${student.student_number})`);
+
+      res.json({
+        success: true,
+        message: `Senha de ${student.name} resetada para ${DEFAULT_PASSWORD}`,
+        student: {
+          id,
+          name: student.name,
+          student_number: student.student_number,
+          email: student.email
+        },
+        newPassword: DEFAULT_PASSWORD,
+        mustChangePassword: true
+      });
+    } catch (error: any) {
+      console.error("[RESET] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao resetar senha",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/admin/students/reset-all-passwords - Resetar senha de TODOS os alunos
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/students/reset-all-passwords", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY_MS = 1500;
+
+    try {
+      const { turma, schoolId } = req.body as { turma?: string; schoolId?: string };
+
+      // Buscar alunos (filtrados por turma/escola se especificado)
+      let query = supabaseAdmin
+        .from('profiles')
+        .select('id, name, student_number')
+        .eq('role', 'student');
+
+      if (turma) query = query.eq('turma', turma);
+      if (schoolId) query = query.eq('school_id', schoolId);
+
+      const { data: students, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+      if (!students || students.length === 0) {
+        res.status(404).json({ error: "Nenhum aluno encontrado" });
+        return;
+      }
+
+      console.log(`[RESET-ALL] Resetando senha de ${students.length} aluno(s)...`);
+
+      let success = 0;
+      let errors = 0;
+      const failures: string[] = [];
+
+      // Processar em lotes
+      for (let i = 0; i < students.length; i += BATCH_SIZE) {
+        const batch = students.slice(i, i + BATCH_SIZE);
+
+        const results = await Promise.all(batch.map(async (student) => {
+          try {
+            await supabaseAdmin.auth.admin.updateUserById(student.id, {
+              password: DEFAULT_PASSWORD,
+              user_metadata: { must_change_password: true }
+            });
+            return { success: true };
+          } catch (e: any) {
+            return { success: false, error: `${student.student_number}: ${e.message}` };
+          }
+        }));
+
+        results.forEach(r => {
+          if (r.success) success++;
+          else {
+            errors++;
+            if ('error' in r) failures.push(r.error);
+          }
+        });
+
+        if (i + BATCH_SIZE < students.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+      }
+
+      console.log(`[RESET-ALL] ✅ Concluído: ${success} resetados, ${errors} erros`);
+
+      res.json({
+        success: errors === 0,
+        summary: {
+          total: students.length,
+          success,
+          errors
+        },
+        newPassword: DEFAULT_PASSWORD,
+        failures: failures.length > 0 ? failures : undefined
+      });
+    } catch (error: any) {
+      console.error("[RESET-ALL] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao resetar senhas",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/admin/students-legacy - REMOVIDO: Usar o novo /api/admin/students
+  // Este endpoint foi substituído pelo novo que usa a tabela 'students'
 
   // POST /api/admin/reset-password - Resetar senha do aluno
   // 🔒 PROTECTED: Requer autenticação + role admin
@@ -4375,24 +4649,31 @@ Para cada disciplina:
   // TURMAS - Gestão e Geração de Gabaritos
   // ============================================================================
 
-  // GET /api/admin/turmas - Listar turmas com contagem de alunos
+  // GET /api/admin/turmas - Listar turmas com contagem de alunos (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      // Buscar todas as turmas distintas com contagem
-      const { data: profiles, error } = await supabaseAdmin
-        .from('profiles')
+      const { school_id } = req.query;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Buscar todas as turmas distintas com contagem da tabela students
+      const { data: students, error } = await supabaseAdmin
+        .from('students')
         .select('turma')
-        .eq('role', 'student')
+        .eq('school_id', school_id as string)
         .not('turma', 'is', null);
 
       if (error) throw error;
 
       // Agrupar por turma e contar
       const turmaMap = new Map<string, number>();
-      profiles?.forEach(p => {
-        if (p.turma) {
-          turmaMap.set(p.turma, (turmaMap.get(p.turma) || 0) + 1);
+      students?.forEach(s => {
+        if (s.turma) {
+          turmaMap.set(s.turma, (turmaMap.get(s.turma) || 0) + 1);
         }
       });
 
@@ -4411,25 +4692,38 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/admin/turmas/:nome/alunos - Listar alunos de uma turma
+  // GET /api/admin/turmas/:nome/alunos - Listar alunos de uma turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/turmas/:nome/alunos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const turma = decodeURIComponent(req.params.nome);
+      const { school_id } = req.query;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
 
       const { data: alunos, error } = await supabaseAdmin
-        .from('profiles')
-        .select('id, name, student_number, turma, email')
-        .eq('role', 'student')
+        .from('students')
+        .select('id, name, matricula, turma')
+        .eq('school_id', school_id as string)
         .eq('turma', turma)
         .order('name');
 
       if (error) throw error;
 
+      // Mapear para formato esperado
+      const alunosFormatted = (alunos || []).map(a => ({
+        ...a,
+        student_number: a.matricula,
+        email: `${a.matricula}@escola.gabaritai.com`
+      }));
+
       res.json({
         success: true,
         turma,
-        alunos: alunos || [],
+        alunos: alunosFormatted,
         total: alunos?.length || 0
       });
     } catch (error: any) {
@@ -4438,7 +4732,7 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/turmas - Criar nova turma (criar um aluno placeholder para a turma existir)
+  // POST /api/admin/turmas - Criar nova turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.post("/api/admin/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4449,10 +4743,16 @@ Para cada disciplina:
         return;
       }
 
-      // Verificar se já existe alunos com essa turma
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Verificar se já existe alunos com essa turma na escola
       const { data: existing, error: checkError } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('id')
+        .eq('school_id', school_id)
         .eq('turma', nome)
         .limit(1);
 
@@ -4476,7 +4776,7 @@ Para cada disciplina:
     }
   });
 
-  // PUT /api/admin/turmas/:nome - Renomear turma
+  // PUT /api/admin/turmas/:nome - Renomear turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.put("/api/admin/turmas/:nome", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4488,9 +4788,14 @@ Para cada disciplina:
         return;
       }
 
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
       // Atualizar todos os alunos da turma para o novo nome
       const { data, error } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .update({ turma: novoNome })
         .eq('turma', turmaAtual)
         .eq('school_id', school_id)
@@ -4509,7 +4814,7 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/admin/turmas/:nome - Excluir turma (remove turma dos alunos, não exclui alunos)
+  // DELETE /api/admin/turmas/:nome - Excluir turma (remove alunos da turma)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.delete("/api/admin/turmas/:nome", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4523,7 +4828,7 @@ Para cada disciplina:
 
       // Contar alunos na turma
       const { count } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('*', { count: 'exact', head: true })
         .eq('turma', turma)
         .eq('school_id', school_id);
@@ -4545,69 +4850,62 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/students - Criar um único aluno
+  // POST /api/admin/students - Criar um único aluno (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.post("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { nome, matricula, turma, school_id } = req.body;
 
-      if (!nome || !matricula || !turma) {
-        res.status(400).json({ error: "Nome, matrícula e turma são obrigatórios" });
+      if (!nome || !matricula) {
+        res.status(400).json({ error: "Nome e matrícula são obrigatórios" });
         return;
       }
 
-      // Verificar se matrícula já existe
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Verificar se matrícula já existe na escola
       const { data: existing, error: checkError } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('id')
-        .eq('student_number', matricula)
+        .eq('school_id', school_id)
+        .eq('matricula', matricula)
         .limit(1);
 
       if (checkError) throw checkError;
 
       if (existing && existing.length > 0) {
-        res.status(400).json({ error: "Matrícula já cadastrada" });
+        res.status(400).json({ error: "Matrícula já cadastrada nesta escola" });
         return;
       }
 
-      // Gerar email e senha
-      const email = `${matricula}@escola.gabaritai.com`;
-      const senha = Math.random().toString(36).slice(-8);
-
-      // Criar usuário no Supabase Auth
-      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password: senha,
-        email_confirm: true,
-        user_metadata: {
+      // Criar aluno na tabela students (sem Auth)
+      const { data: newStudent, error: insertError } = await supabaseAdmin
+        .from('students')
+        .insert({
+          school_id,
+          matricula,
           name: nome,
-          role: 'student',
-          school_id: school_id || null,
-          student_number: matricula,
-          turma
-        }
-      });
+          turma: turma || null
+        })
+        .select()
+        .single();
 
-      if (authError) {
-        throw new Error(`Erro ao criar usuário: ${authError.message}`);
+      if (insertError) {
+        throw new Error(`Erro ao criar aluno: ${insertError.message}`);
       }
-
-      // Marcar como deve trocar senha no primeiro acesso
-      await supabaseAdmin
-        .from('profiles')
-        .update({ must_change_password: true })
-        .eq('id', authUser.user.id);
 
       res.json({
         success: true,
         aluno: {
-          id: authUser.user.id,
-          nome,
-          matricula,
-          turma,
-          email
-        },
-        senha // Retornar senha apenas na criação
+          id: newStudent.id,
+          nome: newStudent.name,
+          matricula: newStudent.matricula,
+          turma: newStudent.turma,
+          email: `${newStudent.matricula}@escola.gabaritai.com`
+        }
       });
     } catch (error: any) {
       console.error("[STUDENTS] Erro ao criar aluno:", error);
@@ -4615,23 +4913,28 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma
+  // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   // 🆕 Usa template XTRI com marcadores de canto para OMR e QR codes
   app.post("/api/admin/generate-gabaritos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      const { turma, alunoIds, dia } = req.body;
+      const { turma, alunoIds, dia, school_id } = req.body;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
 
       if (!turma && (!alunoIds || alunoIds.length === 0)) {
         res.status(400).json({ error: "Informe a turma ou lista de alunos" });
         return;
       }
 
-      // Buscar alunos
+      // Buscar alunos da tabela students
       let query = supabaseAdmin
-        .from('profiles')
-        .select('id, name, student_number, turma')
-        .eq('role', 'student')
+        .from('students')
+        .select('id, name, matricula, turma')
+        .eq('school_id', school_id)
         .order('name');
 
       if (alunoIds && alunoIds.length > 0) {
@@ -4653,7 +4956,7 @@ Para cada disciplina:
       // Converter alunos para formato esperado pelo generateBatchPDF
       const studentsForPdf = alunos.map(aluno => ({
         batch_id: 'admin-generated',
-        enrollment_code: aluno.student_number || null,
+        enrollment_code: aluno.matricula || null,
         student_name: aluno.name || 'Sem nome',
         class_name: aluno.turma || null,
         sheet_code: generateSheetCode(),
@@ -5422,6 +5725,290 @@ Para cada disciplina:
       console.error("[AUTH] Erro ao buscar email por matrícula:", error);
       res.status(500).json({
         error: "Erro ao buscar matrícula",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/auth/promote-to-admin - Promover usuário atual para super_admin
+  // ⚠️ ENDPOINT TEMPORÁRIO - remover em produção
+  app.post("/api/auth/promote-to-admin", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as any;
+      const userId = authReq.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Buscar profile atual
+      const { data: profile, error: fetchError } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (fetchError || !profile) {
+        return res.status(404).json({ error: "Perfil não encontrado" });
+      }
+
+      console.log(`[PROMOTE] Role atual: ${profile.role} -> super_admin`);
+
+      // Atualizar para super_admin
+      const { error: updateError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: 'super_admin' })
+        .eq("id", userId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      res.json({
+        success: true,
+        message: "Usuário promovido a super_admin",
+        user: {
+          id: userId,
+          email: profile.email,
+          name: profile.name,
+          oldRole: profile.role,
+          newRole: 'super_admin'
+        }
+      });
+    } catch (error: any) {
+      console.error("[PROMOTE] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/auth/my-role - Verificar role do usuário atual
+  app.get("/api/auth/my-role", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as any;
+      const userId = authReq.user?.id;
+
+      const { data: profile, error } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, role, school_id")
+        .eq("id", userId)
+        .single();
+
+      if (error || !profile) {
+        return res.status(404).json({ error: "Perfil não encontrado" });
+      }
+
+      res.json(profile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/auth/login-matricula - Login por MATRÍCULA + SENHA (não por email)
+  // Fluxo: Aluno digita matrícula + senha → backend busca email → autentica no Supabase
+  // Se o aluno tem profile mas não tem Auth user, retorna needsRegistration: true
+  app.post("/api/auth/login-matricula", async (req: Request, res: Response) => {
+    try {
+      const { matricula, senha } = req.body as { matricula: string; senha: string };
+
+      if (!matricula || !senha) {
+        return res.status(400).json({
+          error: "Matrícula e senha são obrigatórios"
+        });
+      }
+
+      console.log(`[LOGIN] Tentativa de login com matrícula: ${matricula}`);
+
+      // 1. Buscar profile pela matrícula para obter o email
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, student_number, role")
+        .eq("student_number", matricula.trim())
+        .single();
+
+      if (profileError || !profile) {
+        console.log(`[LOGIN] Matrícula não encontrada: ${matricula}`);
+        return res.status(401).json({
+          error: "Matrícula não encontrada"
+        });
+      }
+
+      // 2. Verificar se existe Auth user para este profile
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(profile.id);
+
+      if (!authUser?.user) {
+        // Profile existe mas não tem Auth user - precisa registrar senha
+        console.log(`[LOGIN] Profile existe mas sem Auth user: ${matricula}`);
+        return res.status(200).json({
+          success: false,
+          needsRegistration: true,
+          message: "Primeiro acesso. Por favor, defina sua senha.",
+          profile: {
+            id: profile.id,
+            name: profile.name,
+            matricula: profile.student_number,
+            email: profile.email
+          }
+        });
+      }
+
+      // 3. Autenticar no Supabase usando o email encontrado
+      const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
+        email: profile.email,
+        password: senha
+      });
+
+      if (authError || !authData.session) {
+        console.log(`[LOGIN] Senha incorreta para matrícula: ${matricula}`);
+        return res.status(401).json({
+          error: "Senha incorreta"
+        });
+      }
+
+      // 4. Verificar se precisa trocar senha (must_change_password)
+      const mustChangePassword = authData.user?.user_metadata?.must_change_password === true;
+
+      console.log(`[LOGIN] ✅ Login bem-sucedido: ${matricula} (${profile.name})`);
+
+      res.json({
+        success: true,
+        session: authData.session,
+        user: {
+          id: authData.user.id,
+          email: profile.email,
+          name: profile.name,
+          matricula: profile.student_number,
+          role: profile.role
+        },
+        mustChangePassword
+      });
+
+    } catch (error: any) {
+      console.error("[LOGIN] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao fazer login",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/auth/register-student - Registrar senha para aluno existente (primeiro acesso)
+  // Aluno já tem profile (importado via CSV) mas não tem Auth user
+  app.post("/api/auth/register-student", async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+
+    try {
+      const { matricula, senha } = req.body as { matricula: string; senha: string };
+
+      if (!matricula || !senha) {
+        return res.status(400).json({
+          error: "Matrícula e senha são obrigatórios"
+        });
+      }
+
+      if (senha.length < 6) {
+        return res.status(400).json({
+          error: "Senha deve ter pelo menos 6 caracteres"
+        });
+      }
+
+      console.log(`[REGISTER] Registrando senha para matrícula: ${matricula}`);
+
+      // 1. Buscar profile pela matrícula
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, student_number, role")
+        .eq("student_number", matricula.trim())
+        .single();
+
+      if (profileError || !profile) {
+        console.log(`[REGISTER] Matrícula não encontrada: ${matricula}`);
+        return res.status(404).json({
+          error: "Matrícula não encontrada"
+        });
+      }
+
+      // 2. Verificar se já existe Auth user
+      const { data: existingAuth } = await supabaseAdmin.auth.admin.getUserById(profile.id);
+
+      if (existingAuth?.user) {
+        console.log(`[REGISTER] Auth user já existe para: ${matricula}`);
+        return res.status(400).json({
+          error: "Você já tem uma conta. Use o login normal.",
+          hint: "Se esqueceu a senha, solicite reset ao administrador."
+        });
+      }
+
+      // 3. Criar Auth user com a senha fornecida
+      const { data: newAuth, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: profile.email,
+        password: senha,
+        email_confirm: true,
+        user_metadata: {
+          name: profile.name,
+          student_number: matricula,
+          must_change_password: false
+        }
+      });
+
+      if (authError) {
+        console.error(`[REGISTER] Erro ao criar Auth user: ${authError.message}`);
+        return res.status(500).json({
+          error: "Erro ao criar conta",
+          details: authError.message
+        });
+      }
+
+      // 4. Atualizar o profile para usar o ID do Auth user
+      // (importante: o profile.id pode ser diferente do auth user id)
+      if (newAuth.user && newAuth.user.id !== profile.id) {
+        // Deletar profile antigo e criar com novo ID
+        await supabaseAdmin.from("profiles").delete().eq("id", profile.id);
+        await supabaseAdmin.from("profiles").insert({
+          id: newAuth.user.id,
+          email: profile.email,
+          name: profile.name,
+          role: profile.role,
+          student_number: profile.student_number,
+          turma: (profile as any).turma,
+          school_id: (profile as any).school_id
+        });
+      }
+
+      // 5. Fazer login automático
+      const { data: authData, error: loginError } = await supabaseAdmin.auth.signInWithPassword({
+        email: profile.email,
+        password: senha
+      });
+
+      if (loginError || !authData.session) {
+        // Conta criada mas login falhou - ainda assim é sucesso
+        console.log(`[REGISTER] ✅ Conta criada, login manual necessário: ${matricula}`);
+        return res.json({
+          success: true,
+          message: "Conta criada com sucesso! Faça login.",
+          needsLogin: true
+        });
+      }
+
+      console.log(`[REGISTER] ✅ Conta criada e logado: ${matricula} (${profile.name})`);
+
+      res.json({
+        success: true,
+        message: "Conta criada com sucesso!",
+        session: authData.session,
+        user: {
+          id: authData.user.id,
+          email: profile.email,
+          name: profile.name,
+          matricula: profile.student_number,
+          role: profile.role
+        }
+      });
+
+    } catch (error: any) {
+      console.error("[REGISTER] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao registrar",
         details: error.message
       });
     }
@@ -6517,23 +7104,77 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/schools/:id - Excluir escola
+  // DELETE /api/schools/:id - Excluir escola (CASCADE: remove provas, respostas e alunos vinculados)
   app.delete("/api/schools/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      // Verificar se há dados relacionados antes de excluir
-      const { count: examsCount } = await supabaseAdmin
+      console.log(`[DELETE SCHOOL] Iniciando exclusão em cascata da escola ${id}`);
+
+      // 1. Buscar todos os exams da escola
+      const { data: exams } = await supabaseAdmin
         .from("exams")
-        .select("*", { count: "exact", head: true })
+        .select("id")
         .eq("school_id", id);
 
-      if (examsCount && examsCount > 0) {
-        return res.status(400).json({
-          error: "Não é possível excluir escola com provas cadastradas"
-        });
+      const examIds = exams?.map(e => e.id) || [];
+
+      // 2. Deletar student_answers de todos os exams
+      if (examIds.length > 0) {
+        const { error: answersError } = await supabaseAdmin
+          .from("student_answers")
+          .delete()
+          .in("exam_id", examIds);
+
+        if (answersError) {
+          console.error("[DELETE SCHOOL] Erro ao deletar respostas:", answersError);
+        } else {
+          console.log(`[DELETE SCHOOL] Respostas dos ${examIds.length} simulados removidas`);
+        }
       }
 
+      // 3. Deletar todos os exams da escola
+      if (examIds.length > 0) {
+        const { error: examsError } = await supabaseAdmin
+          .from("exams")
+          .delete()
+          .eq("school_id", id);
+
+        if (examsError) {
+          console.error("[DELETE SCHOOL] Erro ao deletar simulados:", examsError);
+        } else {
+          console.log(`[DELETE SCHOOL] ${examIds.length} simulados removidos`);
+        }
+      }
+
+      // 4. Deletar alunos vinculados à escola (Auth + Profile)
+      const { data: students } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("school_id", id)
+        .eq("role", "student");
+
+      if (students && students.length > 0) {
+        for (const student of students) {
+          // Deletar Auth user (ignora erro se não existir)
+          await supabaseAdmin.auth.admin.deleteUser(student.id).catch(() => {});
+        }
+
+        // Deletar profiles
+        const { error: profilesError } = await supabaseAdmin
+          .from("profiles")
+          .delete()
+          .eq("school_id", id)
+          .eq("role", "student");
+
+        if (profilesError) {
+          console.error("[DELETE SCHOOL] Erro ao deletar alunos:", profilesError);
+        } else {
+          console.log(`[DELETE SCHOOL] ${students.length} alunos removidos`);
+        }
+      }
+
+      // 5. Finalmente deletar a escola
       const { error } = await supabaseAdmin
         .from("schools")
         .delete()
@@ -6541,8 +7182,18 @@ Para cada disciplina:
 
       if (error) throw error;
 
-      res.json({ success: true, message: "Escola excluída com sucesso" });
+      console.log(`[DELETE SCHOOL] ✅ Escola ${id} excluída com sucesso`);
+
+      res.json({
+        success: true,
+        message: "Escola excluída com sucesso",
+        deleted: {
+          exams: examIds.length,
+          students: students?.length || 0
+        }
+      });
     } catch (error: any) {
+      console.error("[DELETE SCHOOL] Erro:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -6717,23 +7368,27 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/simulados/:id - Deletar simulado
+  // DELETE /api/simulados/:id - Deletar simulado (CASCADE: remove respostas vinculadas)
   app.delete("/api/simulados/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      // Verificar se tem respostas vinculadas
-      const { count } = await supabaseAdmin
-        .from("student_answers")
-        .select("*", { count: "exact", head: true })
-        .eq("exam_id", id);
+      console.log(`[DELETE SIMULADO] Iniciando exclusão em cascata do simulado ${id}`);
 
-      if (count && count > 0) {
-        return res.status(400).json({
-          error: `Não é possível excluir. Existem ${count} respostas vinculadas a este simulado.`
-        });
+      // 1. Deletar todas as respostas vinculadas
+      const { count: answersDeleted, error: answersError } = await supabaseAdmin
+        .from("student_answers")
+        .delete()
+        .eq("exam_id", id)
+        .select("*", { count: "exact", head: true });
+
+      if (answersError) {
+        console.error("[DELETE SIMULADO] Erro ao deletar respostas:", answersError);
+      } else {
+        console.log(`[DELETE SIMULADO] ${answersDeleted || 0} respostas removidas`);
       }
 
+      // 2. Deletar o simulado
       const { error } = await supabaseAdmin
         .from("exams")
         .delete()
@@ -6741,8 +7396,17 @@ Para cada disciplina:
 
       if (error) throw error;
 
-      res.json({ success: true, message: "Simulado excluído com sucesso" });
+      console.log(`[DELETE SIMULADO] ✅ Simulado ${id} excluído com sucesso`);
+
+      res.json({
+        success: true,
+        message: "Simulado excluído com sucesso",
+        deleted: {
+          answers: answersDeleted || 0
+        }
+      });
     } catch (error: any) {
+      console.error("[DELETE SIMULADO] Erro:", error);
       res.status(500).json({ error: error.message });
     }
   });
