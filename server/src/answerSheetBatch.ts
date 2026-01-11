@@ -238,18 +238,47 @@ export async function createAnswerSheetBatch(
 const A4_WIDTH = 595.28;
 const A4_HEIGHT = 841.89;
 
-// Configuração do layout
+// ============================================================
+// CONFIGURAÇÃO DO TEMPLATE XTRI (compatível com OMR)
+// ============================================================
+// Coordenadas baseadas no template original em 150 DPI
+// Fator de conversão: 72/150 = 0.48
+const PIXEL_TO_POINTS = 72 / 150;
+
+// Posições dos 4 marcadores de canto (em 150 DPI pixels)
+const MARKERS_150DPI = {
+  TL: { x: 57, y: 463 },
+  TR: { x: 1184, y: 463 },
+  BL: { x: 57, y: 1141 },
+  BR: { x: 1184, y: 1141 },
+};
+const MARKER_SIZE_PX = 32;  // pixels em 150 DPI (área ~1024 para OMR)
+
+// Coordenadas do grid de bolhas (150 DPI)
+const GRID_START_X = 120;
+const GRID_START_Y = 520;
+const BUBBLE_SPACING_X = 25;    // Entre opções A-B-C-D-E
+const COLUMN_SPACING = 179;      // Entre colunas de questões
+const ROW_SPACING = 41.7;        // Entre linhas
+const BUBBLE_RADIUS_PX = 9;      // Raio das bolhas em pixels
+
+// Configurações gerais
 const MARGIN = 40;
 const QR_SIZE = 80;
-const BUBBLE_RADIUS = 5;
-const BUBBLE_SPACING = 12;  // Espaçamento entre centros das bolhas
 const QUESTIONS_PER_COLUMN = 15;
 const NUM_COLUMNS = 6;
 const OPTIONS = ['A', 'B', 'C', 'D', 'E'];
 
-// Layout dentro de cada coluna
-const NUMBER_OFFSET = 2;       // Margem esquerda para o número
-const BUBBLES_START_OFFSET = 18; // Onde as bolhas começam
+// Funções de conversão de coordenadas
+function pxToPtX(px: number): number {
+  return px * PIXEL_TO_POINTS;
+}
+
+function pxToPtY(px: number): number {
+  // ReportLab/PDF tem Y=0 no bottom, pixels têm Y=0 no top
+  // Página @ 150 DPI = 1754 pixels de altura
+  return A4_HEIGHT - (px * PIXEL_TO_POINTS);
+}
 
 /**
  * Gera QR Code como data URL (PNG base64).
@@ -267,103 +296,93 @@ async function generateQRCodeDataURL(data: string): Promise<string> {
 }
 
 /**
- * Desenha os marcadores de canto (quadrados pretos para alinhamento).
+ * Desenha os marcadores de canto (quadrados pretos para alinhamento OMR).
+ * Usa posições exatas do template XTRI em 150 DPI.
  */
-function drawCornerMarkers(page: any, startY: number, gridHeight: number) {
-  const markerSize = 15;
-  const gridWidth = A4_WIDTH - 2 * MARGIN;
+function drawCornerMarkers(page: any) {
+  const markerSizePt = pxToPtX(MARKER_SIZE_PX);
 
-  // Top-left
-  page.drawRectangle({
-    x: MARGIN - markerSize - 5,
-    y: startY + markerSize + 5,
-    width: markerSize,
-    height: markerSize,
-    color: rgb(0, 0, 0),
-  });
+  for (const [name, pos] of Object.entries(MARKERS_150DPI)) {
+    const px = pxToPtX(pos.x);
+    const py = pxToPtY(pos.y);
 
-  // Top-right
-  page.drawRectangle({
-    x: MARGIN + gridWidth + 5,
-    y: startY + markerSize + 5,
-    width: markerSize,
-    height: markerSize,
-    color: rgb(0, 0, 0),
-  });
-
-  // Bottom-left
-  page.drawRectangle({
-    x: MARGIN - markerSize - 5,
-    y: startY - gridHeight - 5,
-    width: markerSize,
-    height: markerSize,
-    color: rgb(0, 0, 0),
-  });
-
-  // Bottom-right
-  page.drawRectangle({
-    x: MARGIN + gridWidth + 5,
-    y: startY - gridHeight - 5,
-    width: markerSize,
-    height: markerSize,
-    color: rgb(0, 0, 0),
-  });
+    page.drawRectangle({
+      x: px - markerSizePt / 2,
+      y: py - markerSizePt / 2,
+      width: markerSizePt,
+      height: markerSizePt,
+      color: rgb(0, 0, 0),
+    });
+  }
 }
 
 /**
- * Desenha a grade de bolhas (90 questões).
+ * Desenha a grade de bolhas (90 questões) com letras dentro.
+ * Usa posições exatas do template XTRI em 150 DPI.
  */
-function drawBubbleGrid(page: any, font: any, startY: number) {
-  const gridWidth = A4_WIDTH - 2 * MARGIN;
-  const columnWidth = gridWidth / NUM_COLUMNS;
-  const rowHeight = 20;
+function drawBubbleGrid(page: any, font: any, boldFont: any) {
+  const bubbleRadiusPt = pxToPtX(BUBBLE_RADIUS_PX);
 
-  for (let col = 0; col < NUM_COLUMNS; col++) {
-    const colX = MARGIN + col * columnWidth;
+  // Desenhar separadores verticais entre colunas
+  const firstY = pxToPtY(GRID_START_Y - 15);
+  const lastY = pxToPtY(GRID_START_Y + (QUESTIONS_PER_COLUMN - 1) * ROW_SPACING + 15);
 
-    for (let row = 0; row < QUESTIONS_PER_COLUMN; row++) {
-      const questionNum = col * QUESTIONS_PER_COLUMN + row + 1;
-      const rowY = startY - row * rowHeight;
+  for (let colIdx = 1; colIdx < NUM_COLUMNS; colIdx++) {
+    const sepX = GRID_START_X + (colIdx * COLUMN_SPACING) - (COLUMN_SPACING - 4 * BUBBLE_SPACING_X) / 2 - 15;
+    const sepXPt = pxToPtX(sepX);
+    page.drawLine({
+      start: { x: sepXPt, y: firstY },
+      end: { x: sepXPt, y: lastY },
+      thickness: 0.3,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+  }
+
+  // Desenhar bolhas com letras dentro
+  for (let colIdx = 0; colIdx < NUM_COLUMNS; colIdx++) {
+    for (let rowIdx = 0; rowIdx < QUESTIONS_PER_COLUMN; rowIdx++) {
+      const qNum = colIdx * QUESTIONS_PER_COLUMN + rowIdx + 1;
+      const y = GRID_START_Y + (rowIdx * ROW_SPACING);
 
       // Número da questão
-      const numText = questionNum.toString().padStart(2, '0');
+      const numX = GRID_START_X + (colIdx * COLUMN_SPACING) - 30;
+      const numText = qNum.toString().padStart(2, '0');
       page.drawText(numText, {
-        x: colX + NUMBER_OFFSET,
-        y: rowY - 4,
-        size: 8,
+        x: pxToPtX(numX),
+        y: pxToPtY(y) - 3,
+        size: 7,
         font: font,
         color: rgb(0, 0, 0),
       });
 
-      // Bolhas A-B-C-D-E
+      // Desenhar as 5 bolhas com letras dentro
       for (let optIdx = 0; optIdx < OPTIONS.length; optIdx++) {
-        const bubbleX = colX + BUBBLES_START_OFFSET + optIdx * BUBBLE_SPACING;
-        const bubbleY = rowY;
+        const x = GRID_START_X + (colIdx * COLUMN_SPACING) + (optIdx * BUBBLE_SPACING_X);
+        const cx = pxToPtX(x);
+        const cy = pxToPtY(y);
 
-        // Círculo vazio (borda)
+        // Bolha vazia - círculo branco com contorno preto e letra preta dentro
         page.drawEllipse({
-          x: bubbleX,
-          y: bubbleY,
-          xScale: BUBBLE_RADIUS,
-          yScale: BUBBLE_RADIUS,
+          x: cx,
+          y: cy,
+          xScale: bubbleRadiusPt,
+          yScale: bubbleRadiusPt,
+          color: rgb(1, 1, 1),
           borderColor: rgb(0, 0, 0),
-          borderWidth: 0.8,
+          borderWidth: 0.5,
         });
 
-        // Letra dentro da bolha
+        // Letra preta dentro da bolha
         page.drawText(OPTIONS[optIdx], {
-          x: bubbleX - 2.5,
-          y: bubbleY - 2.5,
-          size: 6,
-          font: font,
-          color: rgb(0.4, 0.4, 0.4),
+          x: cx - 2.5,
+          y: cy - 2.5,
+          size: 7,
+          font: boldFont,
+          color: rgb(0, 0, 0),
         });
       }
     }
   }
-
-  // Retornar altura total da grade
-  return QUESTIONS_PER_COLUMN * rowHeight;
 }
 
 /**
@@ -514,13 +533,14 @@ async function generateAnswerSheetPage(
   });
 
   // ========== GRADE DE BOLHAS ==========
+  // Usa coordenadas fixas do template XTRI (150 DPI convertido para pontos)
 
-  const gridStartY = instructionsY - 50;
-  const gridHeight = drawBubbleGrid(page, font, gridStartY);
+  drawBubbleGrid(page, font, boldFont);
 
   // ========== MARCADORES DE CANTO ==========
+  // Posições fixas do template XTRI para compatibilidade com OMR
 
-  drawCornerMarkers(page, gridStartY, gridHeight);
+  drawCornerMarkers(page);
 
   // ========== RODAPÉ ==========
 

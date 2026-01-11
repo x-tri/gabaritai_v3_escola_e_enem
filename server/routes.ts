@@ -21,6 +21,7 @@ import {
   parseStudentCSV,
   createAnswerSheetBatch,
   generateBatchPDF,
+  generateSheetCode,
   getBatchById,
   getStudentsByBatchId,
   getStudentBySheetCode,
@@ -4616,9 +4617,10 @@ Para cada disciplina:
 
   // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // 🆕 Usa template XTRI com marcadores de canto para OMR e QR codes
   app.post("/api/admin/generate-gabaritos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      const { turma, alunoIds } = req.body;
+      const { turma, alunoIds, dia } = req.body;
 
       if (!turma && (!alunoIds || alunoIds.length === 0)) {
         res.status(400).json({ error: "Informe a turma ou lista de alunos" });
@@ -4646,140 +4648,35 @@ Para cada disciplina:
         return;
       }
 
-      console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos para turma: ${turma || 'selecionados'}`);
+      console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos XTRI para turma: ${turma || 'selecionados'}`);
 
-      // Carregar template PDF
-      const templatePath = path.join(process.cwd(), "data", "Modelo-de-gabarito.pdf");
-      let templateBytes: Buffer;
+      // Converter alunos para formato esperado pelo generateBatchPDF
+      const studentsForPdf = alunos.map(aluno => ({
+        batch_id: 'admin-generated',
+        enrollment_code: aluno.student_number || null,
+        student_name: aluno.name || 'Sem nome',
+        class_name: aluno.turma || null,
+        sheet_code: generateSheetCode(),
+      }));
 
-      try {
-        templateBytes = await fs.readFile(templatePath);
-      } catch {
-        // Se não encontrar o template, criar um gabarito simples
-        console.warn("[GABARITOS] Template não encontrado, usando gabarito padrão");
+      // Gerar PDF com template XTRI (com marcadores OMR, QR codes, letras nas bolhas)
+      const examName = dia ? `Dia ${dia}` : 'Simulado ENEM';
+      const pdfBuffer = await generateBatchPDF(studentsForPdf, examName);
 
-        // Criar PDF simples com pdf-lib
-        const pdfDoc = await PDFDocument.create();
-        const font = await pdfDoc.embedFont("Helvetica");
-        const boldFont = await pdfDoc.embedFont("Helvetica-Bold");
+      console.log(`[GABARITOS] PDF XTRI gerado com ${alunos.length} páginas`);
 
-        for (const aluno of alunos) {
-          const page = pdfDoc.addPage([595.28, 841.89]); // A4
-          const { height } = page.getSize();
-
-          // Cabeçalho
-          page.drawText("CARTÃO-RESPOSTA", {
-            x: 50,
-            y: height - 50,
-            size: 24,
-            font: boldFont,
-          });
-
-          page.drawText("SIMULADO DO EXAME NACIONAL DO ENSINO MÉDIO", {
-            x: 50,
-            y: height - 75,
-            size: 10,
-            font,
-          });
-
-          // Dados do aluno
-          page.drawText(`Nome: ${aluno.name || ''}`, {
-            x: 50,
-            y: height - 120,
-            size: 12,
-            font,
-          });
-
-          page.drawText(`Turma: ${aluno.turma || ''}`, {
-            x: 400,
-            y: height - 120,
-            size: 12,
-            font,
-          });
-
-          page.drawText(`Matrícula: ${aluno.student_number || ''}`, {
-            x: 400,
-            y: height - 140,
-            size: 12,
-            font,
-          });
-
-          // Grid de respostas (simplificado)
-          const startY = height - 200;
-          const cols = 6;
-          const questionsPerCol = 15;
-          const colWidth = 85;
-          const rowHeight = 20;
-
-          for (let col = 0; col < cols; col++) {
-            for (let row = 0; row < questionsPerCol; row++) {
-              const qNum = col * questionsPerCol + row + 1;
-              const x = 50 + col * colWidth;
-              const y = startY - row * rowHeight;
-
-              page.drawText(`${qNum.toString().padStart(2, '0')}  Ⓐ Ⓑ Ⓒ Ⓓ Ⓔ`, {
-                x,
-                y,
-                size: 9,
-                font,
-              });
-            }
-          }
-        }
-
-        const pdfBytes = await pdfDoc.save();
-
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="gabaritos_${turma || 'selecionados'}.pdf"`);
-        res.send(Buffer.from(pdfBytes));
-        return;
-      }
-
-      // Usar template existente
-      const finalDoc = await PDFDocument.create();
-      const font = await finalDoc.embedFont("Helvetica-Bold");
-
-      for (const aluno of alunos) {
-        // Carregar template para cada aluno
-        const templateDoc = await PDFDocument.load(templateBytes);
-        const [templatePage] = await finalDoc.copyPages(templateDoc, [0]);
-
-        const { width, height } = templatePage.getSize();
-
-        // Adicionar nome do aluno (alinhado com turma e matrícula)
-        templatePage.drawText(aluno.name || '', {
-          x: 55,
-          y: height - 145, // Alinhado com turma e matrícula
-          size: 14,
-          font,
-        });
-
-        // Adicionar turma (campo em branco abaixo do cabeçalho "TURMA")
-        templatePage.drawText(aluno.turma || '', {
-          x: width - 180,
-          y: height - 145, // Campo em branco abaixo do cabeçalho
-          size: 14,
-          font,
-        });
-
-        // Adicionar matrícula (campo em branco abaixo do cabeçalho "MATRICULA")
-        templatePage.drawText(aluno.student_number || '', {
-          x: width - 100,
-          y: height - 145, // Campo em branco abaixo do cabeçalho
-          size: 14,
-          font,
-        });
-
-        finalDoc.addPage(templatePage);
-      }
-
-      const pdfBytes = await finalDoc.save();
-
-      console.log(`[GABARITOS] PDF gerado com ${alunos.length} páginas`);
+      // Gerar CSV com mapeamento matrícula -> sheet_code
+      const codesMapping = studentsForPdf.map(s => ({
+        matricula: s.enrollment_code,
+        nome: s.student_name,
+        turma: s.class_name,
+        sheet_code: s.sheet_code,
+      }));
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="gabaritos_${turma || 'selecionados'}.pdf"`);
-      res.send(Buffer.from(pdfBytes));
+      res.setHeader('X-Sheet-Codes', JSON.stringify(codesMapping));
+      res.send(pdfBuffer);
 
     } catch (error: any) {
       console.error("[GABARITOS] Erro:", error);
