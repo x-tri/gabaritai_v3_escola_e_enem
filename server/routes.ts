@@ -17,6 +17,15 @@ import { registerDebugRoutes } from "./debugRoutes.js";
 import { gerarAnaliseDetalhada } from "./conteudosLoader.js";
 import { storage } from "./storage.js";
 import { supabaseAdmin } from "./lib/supabase.js";
+import {
+  parseStudentCSV,
+  createAnswerSheetBatch,
+  generateBatchPDF,
+  getBatchById,
+  getStudentsByBatchId,
+  getStudentBySheetCode,
+  updateStudentAnswers,
+} from "./src/answerSheetBatch.js";
 import { requireAuth, requireRole, requireSchoolAccess, type AuthenticatedRequest } from "./lib/auth.js";
 import {
   transformStudentsForSupabase,
@@ -6837,6 +6846,279 @@ Para cada disciplina:
 
       res.json({ success: true, message: "Simulado excluído com sucesso" });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================================
+  // ANSWER SHEET BATCHES - Gabaritos com QR Code
+  // ============================================================
+
+  /**
+   * POST /api/answer-sheet-batches
+   * Cria um novo lote de gabaritos a partir de CSV
+   *
+   * Body (multipart/form-data):
+   * - csv: arquivo CSV com alunos (colunas: nome, matricula, turma)
+   * - school_id: ID da escola
+   * - exam_id: ID do simulado/prova
+   * - batch_name: Nome do lote (ex: "Simulado ENEM - Março 2025")
+   */
+  app.post("/api/answer-sheet-batches", uploadCsv.single("csv"), async (req: Request, res: Response) => {
+    try {
+      const { school_id, exam_id, batch_name } = req.body;
+
+      // Validações
+      if (!req.file) {
+        return res.status(400).json({ error: "Arquivo CSV não fornecido" });
+      }
+
+      if (!school_id || !exam_id || !batch_name) {
+        return res.status(400).json({
+          error: "Campos obrigatórios: school_id, exam_id, batch_name"
+        });
+      }
+
+      // Ler e processar CSV
+      const csvContent = req.file.buffer.toString("utf-8");
+      const students = parseStudentCSV(csvContent);
+
+      if (students.length === 0) {
+        return res.status(400).json({ error: "CSV vazio ou sem alunos válidos" });
+      }
+
+      // Criar batch no Supabase
+      const result = await createAnswerSheetBatch(school_id, exam_id, batch_name, students);
+
+      console.log(`[BATCH] Lote criado: ${result.batch.id} com ${result.students.length} alunos`);
+
+      res.json({
+        success: true,
+        batch: result.batch,
+        students_count: result.students.length,
+        students: result.students.map(s => ({
+          id: s.id,
+          student_name: s.student_name,
+          sheet_code: s.sheet_code,
+          enrollment_code: s.enrollment_code,
+          class_name: s.class_name,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[BATCH] Erro ao criar lote:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/answer-sheet-batches/:batchId
+   * Retorna detalhes de um lote
+   */
+  app.get("/api/answer-sheet-batches/:batchId", async (req: Request, res: Response) => {
+    try {
+      const { batchId } = req.params;
+
+      const batch = await getBatchById(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+      }
+
+      const students = await getStudentsByBatchId(batchId);
+
+      res.json({
+        batch,
+        students_count: students.length,
+        students,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/answer-sheet-batches/:batchId/pdf
+   * Gera e retorna PDF com gabaritos do lote
+   */
+  app.get("/api/answer-sheet-batches/:batchId/pdf", async (req: Request, res: Response) => {
+    try {
+      const { batchId } = req.params;
+
+      // Buscar lote
+      const batch = await getBatchById(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+      }
+
+      // Buscar alunos
+      const students = await getStudentsByBatchId(batchId);
+      if (students.length === 0) {
+        return res.status(400).json({ error: "Lote sem alunos" });
+      }
+
+      // Buscar nome do simulado
+      const { data: exam } = await supabaseAdmin
+        .from("exams")
+        .select("title")
+        .eq("id", batch.exam_id)
+        .single();
+
+      const examName = exam?.title || batch.name;
+
+      console.log(`[PDF] Gerando PDF para lote ${batchId} com ${students.length} alunos`);
+
+      // Gerar PDF
+      const pdfBuffer = await generateBatchPDF(students, examName);
+
+      // Enviar PDF
+      const filename = `gabaritos_${batch.name.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`;
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.send(pdfBuffer);
+
+      console.log(`[PDF] PDF gerado: ${filename} (${pdfBuffer.length} bytes)`);
+    } catch (error: any) {
+      console.error("[PDF] Erro ao gerar PDF:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/answer-sheet-students/:sheetCode
+   * Busca aluno por sheet_code (QR Code)
+   */
+  app.get("/api/answer-sheet-students/:sheetCode", async (req: Request, res: Response) => {
+    try {
+      const { sheetCode } = req.params;
+
+      const student = await getStudentBySheetCode(sheetCode);
+      if (!student) {
+        return res.status(404).json({ error: "Código não encontrado" });
+      }
+
+      res.json(student);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/answer-sheet-students/:sheetCode/answers
+   * Salva respostas de um aluno (chamado após leitura OMR)
+   *
+   * Body:
+   * - answers: array de respostas ["A", "B", null, "C", ...]
+   */
+  app.post("/api/answer-sheet-students/:sheetCode/answers", async (req: Request, res: Response) => {
+    try {
+      const { sheetCode } = req.params;
+      const { answers } = req.body;
+
+      if (!answers || !Array.isArray(answers)) {
+        return res.status(400).json({ error: "Campo 'answers' deve ser um array" });
+      }
+
+      // Verificar se aluno existe
+      const student = await getStudentBySheetCode(sheetCode);
+      if (!student) {
+        return res.status(404).json({ error: "Código não encontrado" });
+      }
+
+      // Atualizar respostas
+      const updated = await updateStudentAnswers(sheetCode, answers);
+
+      console.log(`[ANSWERS] Respostas salvas para ${sheetCode}: ${answers.filter(a => a).length}/90`);
+
+      res.json({
+        success: true,
+        student: updated,
+      });
+    } catch (error: any) {
+      console.error("[ANSWERS] Erro ao salvar respostas:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/process-sheet-with-qr
+   * Processa gabarito: lê QR + OMR e salva respostas
+   * Endpoint conveniente que faz tudo em uma chamada
+   *
+   * Body (multipart/form-data):
+   * - image: imagem do gabarito escaneado
+   */
+  app.post("/api/process-sheet-with-qr", upload.single("image"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Imagem não fornecida" });
+      }
+
+      // 1. Enviar para API OMR com QR
+      const axios = (await import("axios")).default;
+      const FormData = (await import("form-data")).default;
+
+      const formData = new FormData();
+      formData.append("image", req.file.buffer, {
+        filename: "scan.png",
+        contentType: req.file.mimetype,
+      });
+
+      const omrUrl = `${PYTHON_OMR_SERVICE_URL}/api/process-sheet`;
+      console.log(`[PROCESS] Enviando imagem para OMR: ${omrUrl}`);
+
+      const omrResponse = await axios.post(omrUrl, formData, {
+        headers: formData.getHeaders(),
+        timeout: 60000,
+      });
+
+      const omrResult = omrResponse.data;
+
+      if (omrResult.status !== "sucesso") {
+        return res.status(400).json({
+          error: omrResult.message || "Erro no processamento OMR",
+          code: omrResult.code,
+        });
+      }
+
+      const { sheet_code, answers, stats } = omrResult;
+
+      // 2. Buscar aluno no Supabase
+      const student = await getStudentBySheetCode(sheet_code);
+      if (!student) {
+        return res.status(404).json({
+          error: `Código ${sheet_code} não encontrado no sistema`,
+          code: "STUDENT_NOT_FOUND",
+          sheet_code,
+        });
+      }
+
+      // 3. Salvar respostas
+      const updated = await updateStudentAnswers(sheet_code, answers);
+
+      console.log(`[PROCESS] Processado: ${sheet_code} - ${student.student_name} - ${stats.answered}/90 respostas`);
+
+      res.json({
+        success: true,
+        sheet_code,
+        student: {
+          id: student.id,
+          student_name: student.student_name,
+          enrollment_code: student.enrollment_code,
+          class_name: student.class_name,
+        },
+        answers,
+        stats,
+        processed_at: updated?.processed_at,
+      });
+    } catch (error: any) {
+      console.error("[PROCESS] Erro:", error.response?.data || error.message);
+
+      // Tratar erros da API OMR
+      if (error.response?.data) {
+        return res.status(error.response.status || 500).json(error.response.data);
+      }
+
       res.status(500).json({ error: error.message });
     }
   });
