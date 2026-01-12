@@ -8,6 +8,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Home from "@/pages/home";
 import LoginPage from "@/pages/login";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import SignupPage from "@/pages/signup";
 import StudentDashboard from "@/pages/student-dashboard";
 import AdminPage from "@/pages/admin";
@@ -21,6 +23,8 @@ function Router() {
     <Switch>
       {/* Rotas públicas */}
       <Route path="/login" component={LoginPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/signup" component={SignupPage} />
       <Route path="/unauthorized" component={UnauthorizedPage} />
 

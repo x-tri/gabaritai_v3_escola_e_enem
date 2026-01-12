@@ -148,6 +148,11 @@ export default function LoginPage() {
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Entrar
             </Button>
+            <div className="text-center text-sm">
+              <Link href="/forgot-password" className="text-primary hover:underline">
+                Esqueceu sua senha?
+              </Link>
+            </div>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Não tem conta?{' '}
               <Link href="/signup" className="text-blue-600 hover:underline">
