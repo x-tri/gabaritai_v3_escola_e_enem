@@ -140,6 +140,61 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
 }
 
 /**
+ * Chama o serviço Python OMR com leitura de QR Code
+ * Usa o endpoint /api/process-sheet que lê QR + OMR + busca aluno no Supabase
+ */
+async function callPythonOMRWithQR(imageBuffer: Buffer, pageNumber: number): Promise<{
+  status: string;
+  sheet_code?: string;
+  student?: {
+    student_name: string | null;
+    enrollment: string | null;
+    class_name: string | null;
+    exam_id: string | null;
+  } | null;
+  answers?: (string | null)[];
+  stats?: {
+    answered: number;
+    blank: number;
+    double_marked: number;
+  };
+  timings?: Record<string, number>;
+  saved?: boolean;
+  code?: string;
+  message?: string;
+}> {
+  try {
+    const axios = (await import("axios")).default;
+    const FormData = (await import("form-data")).default;
+    const formData = new FormData();
+
+    formData.append("image", imageBuffer, {
+      filename: `page_${pageNumber}.png`,
+      contentType: "image/png",
+    });
+
+    const omrUrl = `${PYTHON_OMR_SERVICE_URL}/api/process-sheet`;
+    console.log(`[Python OMR+QR] Enviando imagem de ${imageBuffer.length} bytes para página ${pageNumber}...`);
+
+    const response = await axios.post(omrUrl, formData, {
+      timeout: 120000,
+      headers: formData.getHeaders(),
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
+    return response.data;
+  } catch (error: any) {
+    console.error(`[Python OMR+QR] ❌ ERRO:`, error.message || error);
+    if (error.response?.data) {
+      // Retornar erro da API para tratamento
+      return error.response.data;
+    }
+    throw new Error(`Erro de conexão com OMR: ${error.message || error}`);
+  }
+}
+
+/**
  * Chama o serviço Python OMR com retry e backoff exponencial
  */
 async function callPythonOMRWithRetry(
@@ -772,34 +827,71 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           await fs.unlink(`${tempPngPath}.png`).catch(() => {});
         }
 
-        // PASSO 3: Processar OMR
-        console.log(`\n[JOB ${jobId}] ━━━ PASSO 3/5: OMR - PÁGINA ${pageNumber} ━━━`);
-        
-        let omrResult;
-        let pythonHeader: { nome: string | null; turma: string | null; matricula: string | null } | undefined;
+        // PASSO 3: Processar OMR + QR Code
+        console.log(`\n[JOB ${jobId}] ━━━ PASSO 3/5: OMR + QR CODE - PÁGINA ${pageNumber} ━━━`);
+
+        let mergedAnswers: Array<string | null> = [];
+        let scanQualityWarnings: string[] = [];
+        let overallConfidence = 0.7;
+        let studentTurma: string | undefined;
 
         if (usePythonOMR) {
           try {
-            console.log(`[JOB ${jobId}] 🔵 Chamando Python OMR para página ${pageNumber}...`);
+            console.log(`[JOB ${jobId}] 🔵 Chamando Python OMR + QR para página ${pageNumber}...`);
             const startOMR = Date.now();
-            // Determinar config baseado no template
-            const omrConfig = template === "modelo_menor" ? "modelo_menor" : "default";
-            const pythonResult = await callPythonOMRWithRetry(imageBuffer, pageNumber, omrConfig);
 
-            omrResult = convertPythonOMRToInternal(pythonResult, officialGabaritoTemplate.totalQuestions);
+            // 🆕 Usar endpoint que lê QR Code + OMR
+            const qrResult = await callPythonOMRWithQR(imageBuffer, pageNumber);
             const omrDuration = Date.now() - startOMR;
 
-            // 🆕 Extrair header do Python OMR (Tesseract OCR)
-            pythonHeader = pythonResult.pagina?.header;
+            if (qrResult.status === "sucesso" && qrResult.answers) {
+              // Sucesso: QR lido + OMR processado
+              mergedAnswers = qrResult.answers.map(a => a || null);
+              const stats = qrResult.stats || { answered: 0, blank: 90, double_marked: 0 };
 
-            if (pythonResult.status === "sucesso" && pythonResult.pagina) {
-              const detected = omrResult.detectedAnswers.filter(a => a).length;
-              console.log(`[JOB ${jobId}] ✅ Python OMR (${omrConfig}): ${detected}/90 respostas detectadas (${omrDuration}ms)`);
-              if (pythonHeader) {
-                console.log(`[JOB ${jobId}] 📋 Header OCR: nome="${pythonHeader.nome}", turma="${pythonHeader.turma}", matricula="${pythonHeader.matricula}"`);
+              console.log(`[JOB ${jobId}] ✅ QR+OMR: ${stats.answered}/90 respostas (${omrDuration}ms)`);
+
+              // Extrair dados do aluno do QR Code
+              if (qrResult.sheet_code) {
+                studentNumber = qrResult.sheet_code;
+                console.log(`[JOB ${jobId}] 📋 Sheet Code: ${qrResult.sheet_code}`);
               }
+
+              if (qrResult.student) {
+                if (qrResult.student.student_name) {
+                  studentName = qrResult.student.student_name;
+                  console.log(`[JOB ${jobId}] 👤 Nome: ${studentName}`);
+                }
+                if (qrResult.student.enrollment) {
+                  studentNumber = qrResult.student.enrollment;
+                  console.log(`[JOB ${jobId}] 🎫 Matrícula: ${studentNumber}`);
+                }
+                if (qrResult.student.class_name) {
+                  studentTurma = qrResult.student.class_name;
+                  console.log(`[JOB ${jobId}] 🏫 Turma: ${studentTurma}`);
+                }
+              }
+
+              // Calcular confiança
+              overallConfidence = stats.answered > 0 ? 0.70 + (stats.answered / 90) * 0.28 : 0.40;
+
+            } else if (qrResult.code === "QR_NOT_FOUND") {
+              // QR não encontrado - usar fallback para OMR simples
+              console.warn(`[JOB ${jobId}] ⚠️ QR Code não encontrado, usando OMR simples...`);
+
+              const omrConfig = template === "modelo_menor" ? "modelo_menor" : "default";
+              const pythonResult = await callPythonOMRWithRetry(imageBuffer, pageNumber, omrConfig);
+              const omrResultInternal = convertPythonOMRToInternal(pythonResult, officialGabaritoTemplate.totalQuestions);
+
+              mergedAnswers = [...omrResultInternal.detectedAnswers];
+              overallConfidence = omrResultInternal.overallConfidence;
+
+              const detected = mergedAnswers.filter(a => a).length;
+              console.log(`[JOB ${jobId}] ✅ OMR Fallback: ${detected}/90 respostas`);
+              scanQualityWarnings.push("QR Code não detectado - aluno não identificado");
+
             } else {
-              throw new Error(pythonResult.mensagem || "Erro desconhecido no serviço Python OMR");
+              throw new Error(qrResult.message || "Erro desconhecido no serviço Python OMR");
             }
           } catch (pythonError) {
             console.error(`[JOB ${jobId}] ❌ Erro no Python OMR:`, pythonError);
@@ -809,154 +901,42 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           throw new Error(`Serviço Python OMR não disponível. Execute: cd python_omr_service && python app.py`);
         }
 
-        // 🔥 OMR ULTRA + GPT VISION AUDITORIA
-        let mergedAnswers: Array<string | null> = [...omrResult.detectedAnswers];
-        let scanQualityWarnings: string[] = [];
-
-        // 🤖 AUDITORIA GPT VISION: Valida e corrige respostas do OMR
-        if (enableOcr && process.env.OPENAI_API_KEY) {
-          try {
-            console.log(`[JOB ${jobId}] 🤖 Auditoria GPT Vision das respostas...`);
-            const gptAudit = await callChatGPTVisionOMR(
-              imageBuffer,
-              officialGabaritoTemplate.totalQuestions,
-              omrResult.detectedAnswers
-            );
-
-            // Aplicar correções do GPT
-            if (gptAudit.corrections && gptAudit.corrections.length > 0) {
-              console.log(`[JOB ${jobId}] 🔧 GPT encontrou ${gptAudit.corrections.length} correções:`);
-              for (const corr of gptAudit.corrections) {
-                console.log(`[JOB ${jobId}]   - Q${corr.q}: "${corr.omr}" → "${corr.corrected}" (${corr.reason || 'sem motivo'})`);
-                if (corr.q >= 1 && corr.q <= mergedAnswers.length) {
-                  mergedAnswers[corr.q - 1] = corr.corrected;
-                }
-              }
-            } else {
-              console.log(`[JOB ${jobId}] ✅ GPT confirmou respostas do OMR (sem correções)`);
-            }
-
-            // Alertas de qualidade do scan
-            if (gptAudit.scanQuality) {
-              console.log(`[JOB ${jobId}] 📊 Qualidade scan: ${gptAudit.scanQuality.quality}`);
-              if (gptAudit.scanQuality.issues && gptAudit.scanQuality.issues.length > 0) {
-                scanQualityWarnings = gptAudit.scanQuality.issues;
-                console.warn(`[JOB ${jobId}] ⚠️ Problemas: ${scanQualityWarnings.join(', ')}`);
-              }
-            }
-          } catch (gptError) {
-            console.warn(`[JOB ${jobId}] ⚠️ Erro na auditoria GPT (usando apenas OMR):`, gptError);
-          }
-        }
-        
         // PASSO 4: VALIDAÇÃO DAS RESPOSTAS
-        console.log(`\n[JOB ${jobId}] ━━━ PASSO 4/5: OMR ULTRA - VALIDAÇÃO (PÁGINA ${pageNumber}) ━━━`);
-        
+        console.log(`\n[JOB ${jobId}] ━━━ PASSO 4/5: VALIDAÇÃO (PÁGINA ${pageNumber}) ━━━`);
+
         const expectedLength = officialGabaritoTemplate.totalQuestions;
-        const omrLength = omrResult.detectedAnswers.length;
-        
-        console.log(`[JOB ${jobId}] 📊 RESULTADO OMR ULTRA:`);
+        const omrLength = mergedAnswers.length;
+
+        console.log(`[JOB ${jobId}] 📊 RESULTADO:`);
         console.log(`[JOB ${jobId}]   - Esperado: ${expectedLength} questões`);
         console.log(`[JOB ${jobId}]   - Detectadas: ${omrLength} respostas`);
-        console.log(`[JOB ${jobId}]   - Respondidas: ${omrResult.detectedAnswers.filter(a => a).length}/90`);
-        
+        console.log(`[JOB ${jobId}]   - Respondidas: ${mergedAnswers.filter(a => a).length}/90`);
+
         // Validar tamanho
         if (omrLength !== expectedLength) {
           const warningMsg = `OMR retornou ${omrLength} respostas, ajustando para ${expectedLength}.`;
           console.warn(`[JOB ${jobId}] ⚠️ ${warningMsg}`);
-          // Preencher com nulls se faltar
-          while (omrResult.detectedAnswers.length < expectedLength) {
-            omrResult.detectedAnswers.push(null);
+          while (mergedAnswers.length < expectedLength) {
+            mergedAnswers.push(null);
           }
-          mergedAnswers = omrResult.detectedAnswers.slice(0, expectedLength);
+          mergedAnswers = mergedAnswers.slice(0, expectedLength);
         }
-        
+
         // Log das primeiras 10 questões para debug
         const first10 = mergedAnswers.slice(0, 10).map((ans, idx) => `Q${idx + 1}="${ans || '-'}"`).join(", ");
         console.log(`[JOB ${jobId}] 📋 Primeiras 10: ${first10}`);
-        
-        console.log(`[JOB ${jobId}] ✅ OMR Ultra concluído para página ${pageNumber}`);
-        console.log(`[JOB ${jobId}] 🔥 OMR: OpenCV | Header: GPT Vision`);
 
-        // 🆕 Abordagem Híbrida: GPT Vision para header (mais preciso que Tesseract)
-        let studentTurma: string | undefined;
+        console.log(`[JOB ${jobId}] ✅ Processamento concluído para página ${pageNumber}`);
+        console.log(`[JOB ${jobId}] 🔥 Método: QR Code + OMR OpenCV`);
 
-        if (enableOcr && process.env.OPENAI_API_KEY) {
-          try {
-            console.log(`[JOB ${jobId}] 🤖 Extraindo header com GPT Vision...`);
-            const headerResult = await extractHeaderInfoWithGPT(imageBuffer);
+        // Converter respostas para formato final (string vazia para null)
+        const finalAnswers = mergedAnswers.map(ans => ans ?? "");
 
-            if (headerResult.name) {
-              studentName = headerResult.name.substring(0, 100);
-              console.log(`[JOB ${jobId}] ✅ Nome (GPT): "${studentName}"`);
-            }
-
-            if (headerResult.studentNumber) {
-              studentNumber = headerResult.studentNumber.substring(0, 20);
-              console.log(`[JOB ${jobId}] ✅ Matrícula (GPT): "${studentNumber}"`);
-            }
-
-            if (headerResult.turma) {
-              studentTurma = headerResult.turma;
-              console.log(`[JOB ${jobId}] ✅ Turma (GPT): "${studentTurma}"`);
-            }
-          } catch (gptError) {
-            console.warn(`[JOB ${jobId}] ⚠️ Erro GPT Vision header:`, gptError);
-          }
-        } else {
-          console.log(`[JOB ${jobId}] ⚠️ OCR desativado ou OPENAI_API_KEY não configurada`);
-        }
-
-        // VALIDAÇÃO FINAL ANTES DE CRIAR finalAnswers
-        if (mergedAnswers.length !== officialGabaritoTemplate.totalQuestions) {
-          const errorMsg = `ERRO CRÍTICO: mergedAnswers tem tamanho incorreto (${mergedAnswers.length}) antes de criar finalAnswers. Esperado: ${officialGabaritoTemplate.totalQuestions}. Página ${pageNumber}.`;
-          console.error(`[JOB ${jobId}] ❌ ${errorMsg}`);
-          job.warnings.push(errorMsg);
-          // Garantir tamanho correto
-          while (mergedAnswers.length < officialGabaritoTemplate.totalQuestions) {
-            mergedAnswers.push(null);
-          }
-          mergedAnswers = mergedAnswers.slice(0, officialGabaritoTemplate.totalQuestions);
-        }
-        
-        const finalAnswers = mergedAnswers.map((ans, idx) => {
-          const questionNum = idx + 1;
-          // Log questões vazias nas primeiras 10 para debug
-          if (ans === null && questionNum <= 10) {
-            console.log(`[JOB ${jobId}] ⚠️  Q${questionNum} será salva como string vazia (era null)`);
-          }
-          
-          // VALIDAÇÃO ESPECIAL PARA Q3: Se está vazia, verificar se OMR detectou algo
-          if (questionNum === 3 && ans === null) {
-            const omrQ3 = omrResult.detectedAnswers[2]; // Índice 2 = questão 3
-            if (omrQ3) {
-              console.warn(`[JOB ${jobId}] ⚠️  Q3 está NULL mas OMR detectou "${omrQ3}". Usando valor do OMR.`);
-              return omrQ3; // Usar valor do OMR se ChatGPT retornou null
-            }
-          }
-          
-          return (ans ?? "");
-        });
-        
-        // VALIDAÇÃO FINAL ESPECÍFICA PARA Q3
-        if (finalAnswers.length > 2 && finalAnswers[2] === "") {
-          const omrQ3 = omrResult.detectedAnswers[2];
-          if (omrQ3) {
-            console.warn(`[JOB ${jobId}] ⚠️  Q3 está vazia no finalAnswers mas OMR detectou "${omrQ3}". Corrigindo...`);
-            finalAnswers[2] = omrQ3;
-          }
-        }
-        
-        // AUDITORIA FINAL: Verificar se todas as questões foram processadas
+        // AUDITORIA FINAL
         const finalAnswered = finalAnswers.filter(a => a !== "").length;
-        console.log(`[JOB ${jobId}] ✅ finalAnswers criado: ${finalAnswered}/${officialGabaritoTemplate.totalQuestions} questões respondidas (página ${pageNumber})`);
-        
-        // Log específico da Q3 no final
-        if (finalAnswers.length > 2) {
-          console.log(`[JOB ${jobId}] 🔍 Q3 FINAL: "${finalAnswers[2] || 'VAZIA'}" (página ${pageNumber})`);
-        }
+        console.log(`[JOB ${jobId}] ✅ finalAnswers: ${finalAnswered}/${officialGabaritoTemplate.totalQuestions} questões (página ${pageNumber})`);
 
-        // Montar texto de qualidade (sem GPT)
+        // Montar texto de qualidade
         const qualityInfo: string[] = [];
         if (scanQualityWarnings.length > 0) {
           qualityInfo.push(`⚠️ ${scanQualityWarnings.join(" | ")}`);
@@ -969,19 +949,17 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           turma: studentTurma,
           answers: finalAnswers,
           pageNumber,
-          confidence: Math.round(omrResult.overallConfidence * 100),
-          rawText: qualityInfo.length > 0
-            ? qualityInfo.join(" | ")
-            : (omrResult.warnings.length > 0 ? omrResult.warnings.join("; ") : undefined),
+          confidence: Math.round(overallConfidence * 100),
+          rawText: qualityInfo.length > 0 ? qualityInfo.join(" | ") : undefined,
         };
 
-        // Retornar dados para o console do frontend (sem GPT)
-        return { 
-          student, 
-          warnings: omrResult.warnings.slice(0, 5),
+        // Retornar dados para o console do frontend
+        return {
+          student,
+          warnings: scanQualityWarnings,
           pageResult: {
             detectedAnswers: mergedAnswers,
-            overallConfidence: omrResult.overallConfidence,
+            overallConfidence,
           }
         };
       } catch (pageError) {
