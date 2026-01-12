@@ -72,7 +72,10 @@ def get_supabase():
 def lookup_student_by_sheet_code(sheet_code: str) -> Optional[Dict[str, Any]]:
     """
     Busca dados do aluno pelo sheet_code no Supabase.
-    Tabela: answer_sheet_students com join em answer_sheet_batches
+
+    Ordem de busca:
+    1. Tabela 'students' (alunos importados via CSV com sheet_code)
+    2. Tabela 'answer_sheet_students' (sistema de batches com QR pré-cadastrado)
     """
     client = get_supabase()
     if not client:
@@ -80,6 +83,32 @@ def lookup_student_by_sheet_code(sheet_code: str) -> Optional[Dict[str, Any]]:
         return None
 
     try:
+        # 1. Buscar na tabela 'students' (novo fluxo - alunos com sheet_code)
+        response = client.table('students') \
+            .select('id, name, matricula, turma, school_id, schools(name)') \
+            .eq('sheet_code', sheet_code) \
+            .single() \
+            .execute()
+
+        if response.data:
+            data = response.data
+            school = data.get('schools', {}) or {}
+            logger.info(f"Student found in 'students' table: {data.get('name')}")
+            return {
+                'id': data['id'],
+                'student_name': data['name'],
+                'enrollment': data.get('matricula'),
+                'class_name': data.get('turma'),
+                'school_id': data.get('school_id'),
+                'school_name': school.get('name'),
+                'source': 'students'
+            }
+    except Exception as e:
+        # Não encontrou na tabela students, tentar answer_sheet_students
+        logger.debug(f"Not found in students table: {e}")
+
+    try:
+        # 2. Buscar na tabela 'answer_sheet_students' (fluxo legado de batches)
         response = client.table('answer_sheet_students') \
             .select('id, student_name, enrollment_code, class_name, batch_id, answer_sheet_batches(exam_id, school_id, name)') \
             .eq('sheet_code', sheet_code) \
@@ -88,8 +117,8 @@ def lookup_student_by_sheet_code(sheet_code: str) -> Optional[Dict[str, Any]]:
 
         if response.data:
             data = response.data
-            batch = data.get('answer_sheet_batches', {})
-            logger.info(f"Student found: {data.get('student_name')}")
+            batch = data.get('answer_sheet_batches', {}) or {}
+            logger.info(f"Student found in 'answer_sheet_students' table: {data.get('student_name')}")
             return {
                 'id': data['id'],
                 'student_name': data['student_name'],
@@ -98,7 +127,8 @@ def lookup_student_by_sheet_code(sheet_code: str) -> Optional[Dict[str, Any]]:
                 'batch_id': data.get('batch_id'),
                 'exam_id': batch.get('exam_id'),
                 'school_id': batch.get('school_id'),
-                'batch_name': batch.get('name')
+                'batch_name': batch.get('name'),
+                'source': 'answer_sheet_students'
             }
         else:
             logger.warning(f"No student found for sheet_code: {sheet_code}")

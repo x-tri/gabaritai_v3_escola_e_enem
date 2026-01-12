@@ -69,6 +69,7 @@ export interface Student {
   matricula: string;
   name: string;
   turma: string | null;
+  sheet_code: string | null; // Código único do QR Code (XTRI-XXXXXX)
   profile_id: string | null; // Vinculado quando aluno cria conta
   created_at: string;
   updated_at: string;
