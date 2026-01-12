@@ -4956,6 +4956,23 @@ Para cada disciplina:
         sheet_code: aluno.sheet_code || generateSheetCode(),
       }));
 
+      // Salvar sheet_codes gerados de volta no banco (para alunos que não tinham)
+      const alunosSemCodigo = alunos.filter((a, i) => !a.sheet_code && studentsForPdf[i].sheet_code);
+      if (alunosSemCodigo.length > 0) {
+        console.log(`[GABARITOS] Salvando ${alunosSemCodigo.length} sheet_codes novos no banco`);
+        for (let i = 0; i < alunos.length; i++) {
+          if (!alunos[i].sheet_code && studentsForPdf[i].sheet_code) {
+            const { error: updateError } = await supabaseAdmin
+              .from('students')
+              .update({ sheet_code: studentsForPdf[i].sheet_code })
+              .eq('id', alunos[i].id);
+            if (updateError) {
+              console.error(`[GABARITOS] Erro ao salvar sheet_code para ${alunos[i].name}:`, updateError);
+            }
+          }
+        }
+      }
+
       // Gerar PDF com template XTRI (com marcadores OMR, QR codes, letras nas bolhas)
       const examName = dia ? `Dia ${dia}` : 'Simulado ENEM';
       const pdfBuffer = await generateBatchPDF(studentsForPdf, examName);
