@@ -4207,6 +4207,47 @@ Para cada disciplina:
     }
   });
 
+  // GET /api/admin/export-credentials - Exportar credenciais dos alunos
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.get("/api/admin/export-credentials", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { turma, school_id } = req.query;
+
+      let query = supabaseAdmin
+        .from("profiles")
+        .select("name, student_number, email, turma")
+        .eq("role", "student")
+        .order("turma")
+        .order("name");
+
+      if (turma && typeof turma === 'string') {
+        query = query.eq("turma", turma);
+      }
+
+      if (school_id && typeof school_id === 'string') {
+        query = query.eq("school_id", school_id);
+      }
+
+      const { data: students, error } = await query;
+
+      if (error) throw error;
+
+      // Gerar CSV
+      const csvHeader = "Nome,Matrícula,Email,Turma,Senha Padrão\n";
+      const csvRows = students?.map(s =>
+        `"${s.name || ''}","${s.student_number || ''}","${s.email || ''}","${s.turma || ''}","${s.student_number}1234"`
+      ).join("\n") || "";
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=credenciais_alunos.csv");
+      res.send(csvHeader + csvRows);
+
+    } catch (error: any) {
+      console.error("[EXPORT_CREDENTIALS] Erro:", error);
+      res.status(500).json({ error: "Erro ao exportar credenciais", details: error.message });
+    }
+  });
+
   // GET /api/admin/students - Listar alunos com filtros
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
