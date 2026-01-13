@@ -785,7 +785,7 @@ export default function EscolaPage() {
       `}</style>
 
       {/* Header Sticky */}
-      <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-800 shadow-sm">
+      <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -815,6 +815,8 @@ export default function EscolaPage() {
             </Badge>
           </div>
         </div>
+        {/* Gradient bar */}
+        <div className="h-1 bg-gradient-to-r from-[#33B5E5] via-[#F26A4B] to-[#33B5E5]" />
       </header>
 
       {/* Main Content */}
