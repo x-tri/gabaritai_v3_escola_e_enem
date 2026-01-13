@@ -15,7 +15,7 @@ import {
   Loader2, LogOut, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Eye, X, Download,
-  BookOpen, CheckCircle2, XCircle, Filter
+  BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -857,14 +857,26 @@ export default function EscolaPage() {
                         <p className="font-medium">{turma.tri_mt?.toFixed(0) || '-'}</p>
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setSelectedTurmaModal(turma.turma)}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Ver Alunos
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setSelectedTurmaModal(turma.turma)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Ver Alunos
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        title="Exportar Excel"
+                        onClick={() => {
+                          window.open(`/api/escola/turmas/${encodeURIComponent(turma.turma || '')}/export-excel`, '_blank');
+                        }}
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -1218,6 +1230,16 @@ export default function EscolaPage() {
                   MT: {turmaAlunosData?.mediaTurma.mt?.toFixed(0) || '-'}
                 </DialogDescription>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(`/api/escola/turmas/${encodeURIComponent(selectedTurmaModal || '')}/export-excel`, '_blank');
+                }}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Excel
+              </Button>
             </div>
           </DialogHeader>
 

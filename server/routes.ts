@@ -6567,6 +6567,188 @@ Para cada disciplina:
     }
   });
 
+  // GET /api/escola/turmas/:turma/export-excel - Exportar resultados da turma em Excel
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/turmas/:turma/export-excel", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const { turma } = req.params;
+      const decodedTurma = decodeURIComponent(turma);
+
+      console.log(`[EXPORT TURMA] Exportando Excel para turma: ${decodedTurma}`);
+
+      // Buscar resultados da turma
+      const { data: answers, error } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          correct_answers,
+          wrong_answers,
+          blank_answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          created_at,
+          exams(title)
+        `)
+        .eq("turma", decodedTurma)
+        .order("correct_answers", { ascending: false });
+
+      if (error) throw error;
+
+      const results = answers || [];
+
+      if (results.length === 0) {
+        return res.status(404).json({ error: "Nenhum resultado encontrado para esta turma" });
+      }
+
+      // Importar ExcelJS dinamicamente
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.default.Workbook();
+      workbook.creator = "GabaritAI";
+      workbook.created = new Date();
+
+      const sheet = workbook.addWorksheet(`Turma ${decodedTurma}`);
+
+      // Cabeçalhos
+      const headers = [
+        "#",
+        "Nome",
+        "Matrícula",
+        "Prova",
+        "Data",
+        "Acertos",
+        "Erros",
+        "Brancos",
+        "LC (TRI)",
+        "CH (TRI)",
+        "CN (TRI)",
+        "MT (TRI)",
+      ];
+      sheet.addRow(headers);
+
+      // Formatar cabeçalho
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      headerRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF4472C4" },
+      };
+      headerRow.alignment = { vertical: "middle", horizontal: "center" };
+      headerRow.height = 22;
+
+      // Calcular média para formatação condicional
+      const totalAcertos = results.reduce((sum: number, r: any) => sum + (r.correct_answers || 0), 0);
+      const mediaAcertos = results.length > 0 ? totalAcertos / results.length : 0;
+
+      // Adicionar dados
+      results.forEach((r: any, index: number) => {
+        const examTitle = r.exams?.title || "Sem título";
+        const dataFormatada = new Date(r.created_at).toLocaleDateString("pt-BR");
+
+        const row = sheet.addRow([
+          index + 1,
+          r.student_name || "",
+          r.student_number || "",
+          examTitle,
+          dataFormatada,
+          r.correct_answers ?? "-",
+          r.wrong_answers ?? "-",
+          r.blank_answers ?? "-",
+          r.tri_lc?.toFixed(0) ?? "-",
+          r.tri_ch?.toFixed(0) ?? "-",
+          r.tri_cn?.toFixed(0) ?? "-",
+          r.tri_mt?.toFixed(0) ?? "-",
+        ]);
+
+        // Formatação condicional para acertos
+        const acertosCell = row.getCell(6);
+        const acertos = r.correct_answers || 0;
+
+        if (acertos >= mediaAcertos * 1.2) {
+          // Acima de 20% da média = verde
+          acertosCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+          acertosCell.font = { color: { argb: "FF006100" }, bold: true };
+        } else if (acertos < mediaAcertos * 0.8) {
+          // Abaixo de 80% da média = vermelho
+          acertosCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC7CE" } };
+          acertosCell.font = { color: { argb: "FF9C0006" }, bold: true };
+        }
+
+        // Formatação para TRI (verde se >= 650, amarelo 500-650, vermelho < 500)
+        [9, 10, 11, 12].forEach(colIdx => {
+          const cell = row.getCell(colIdx);
+          const value = parseFloat(String(cell.value)) || 0;
+          if (value >= 650) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+            cell.font = { color: { argb: "FF006100" }, bold: true };
+          } else if (value >= 500) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE699" } };
+            cell.font = { color: { argb: "FF9C5700" } };
+          } else if (value > 0) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC7CE" } };
+            cell.font = { color: { argb: "FF9C0006" } };
+          }
+        });
+      });
+
+      // Adicionar linha de resumo
+      sheet.addRow([]);
+      const resumoRow = sheet.addRow([
+        "",
+        "RESUMO",
+        `${results.length} alunos`,
+        "",
+        "",
+        `Média: ${mediaAcertos.toFixed(1)}`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
+      resumoRow.font = { bold: true };
+      resumoRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
+
+      // Ajustar larguras das colunas
+      sheet.getColumn(1).width = 5;   // #
+      sheet.getColumn(2).width = 30;  // Nome
+      sheet.getColumn(3).width = 15;  // Matrícula
+      sheet.getColumn(4).width = 20;  // Prova
+      sheet.getColumn(5).width = 12;  // Data
+      sheet.getColumn(6).width = 10;  // Acertos
+      sheet.getColumn(7).width = 8;   // Erros
+      sheet.getColumn(8).width = 10;  // Brancos
+      sheet.getColumn(9).width = 10;  // LC
+      sheet.getColumn(10).width = 10; // CH
+      sheet.getColumn(11).width = 10; // CN
+      sheet.getColumn(12).width = 10; // MT
+
+      // Congelar primeira linha
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+      // Gerar buffer e enviar
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const filename = `turma_${decodedTurma.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(Buffer.from(buffer));
+
+      console.log(`[EXPORT TURMA] Excel gerado com sucesso: ${results.length} resultados`);
+
+    } catch (error: any) {
+      console.error("[EXPORT TURMA] Erro:", error);
+      res.status(500).json({ error: "Erro ao exportar Excel", details: error.message });
+    }
+  });
+
   // GET /api/escola/alunos/:matricula/historico - Histórico completo de um aluno
   // PROTEGIDO: Apenas school_admin e super_admin
   app.get("/api/escola/alunos/:matricula/historico", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
