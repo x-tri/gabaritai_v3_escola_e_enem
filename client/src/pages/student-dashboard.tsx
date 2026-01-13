@@ -28,12 +28,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  LogOut, TrendingUp, TrendingDown, Minus, BookOpen, Brain, Calculator, Leaf,
+  TrendingUp, TrendingDown, Minus, BookOpen, Brain, Calculator, Leaf,
   Target, CheckCircle2, XCircle, MinusCircle, History, Eye, Calendar, BarChart3,
   AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb, Download, FileText,
-  Lock, Unlock
+  Lock, Unlock, LayoutDashboard, Settings
 } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { DashboardLayout, NavItemConfig } from '@/components/layout';
 import {
   LineChart,
   Line,
@@ -113,6 +114,7 @@ interface DashboardDetails {
     MT: { min: number; max: number; avg: number; count: number };
   };
   turmaSize: number;
+  turmaScatterData?: Array<{ acertos: number; tri: number; isCurrentStudent: boolean }>;
 }
 
 interface StudyPlanArea {
@@ -360,13 +362,25 @@ function DifficultyCard({
   );
 }
 
+// Navigation items for student dashboard
+const studentNavItems: NavItemConfig[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'history', label: 'Histórico', icon: History },
+  { id: 'settings', label: 'Configurações', icon: Settings },
+];
+
 export default function StudentDashboard() {
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const [results, setResults] = useState<StudentResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedResult, setSelectedResult] = useState<StudentResult | null>(null);
+  const [dialogResult, setDialogResult] = useState<StudentResult | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [activeNav, setActiveNav] = useState('dashboard');
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // Estado para seleção de qual simulado analisar em detalhe
+  const [selectedExamId, setSelectedExamId] = useState<string>('');
 
   // Estados para análise detalhada
   const [details, setDetails] = useState<DashboardDetails | null>(null);
@@ -391,6 +405,14 @@ export default function StudentDashboard() {
     setVisibleLines(prev => ({ ...prev, [line]: !prev[line] }));
   };
 
+  // Handle navigation click
+  const handleNavClick = (id: string) => {
+    setActiveNav(id);
+    if (id === 'history' && historyRef.current) {
+      historyRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   // Buscar resultados do aluno
   useEffect(() => {
     async function fetchResults() {
@@ -406,6 +428,10 @@ export default function StudentDashboard() {
 
         if (data.success) {
           setResults(data.results || []);
+          // Inicializa com o último resultado (mais recente)
+          if (data.results?.length > 0 && !selectedExamId) {
+            setSelectedExamId(data.results[0].exam_id);
+          }
         } else {
           setError(data.error || 'Erro ao carregar resultados');
         }
@@ -420,18 +446,15 @@ export default function StudentDashboard() {
     fetchResults();
   }, [profile?.id]);
 
-  // Buscar detalhes quando tem resultado
+  // Buscar detalhes quando selecionar um exame
   useEffect(() => {
     async function fetchDetails() {
-      if (!results.length || !profile?.id) return;
-
-      const ultimoResultado = results[0];
-      if (!ultimoResultado.exam_id) return;
+      if (!selectedExamId || !profile?.id) return;
 
       try {
         setDetailsLoading(true);
         const response = await fetch(
-          `/api/student-dashboard-details/${profile.id}/${ultimoResultado.exam_id}`
+          `/api/student-dashboard-details/${profile.id}/${selectedExamId}`
         );
         const data = await response.json();
 
@@ -446,20 +469,17 @@ export default function StudentDashboard() {
     }
 
     fetchDetails();
-  }, [results, profile?.id]);
+  }, [selectedExamId, profile?.id]);
 
-  // Buscar plano de estudos
+  // Buscar plano de estudos quando selecionar um exame
   useEffect(() => {
     async function fetchStudyPlan() {
-      if (!results.length || !profile?.id) return;
-
-      const ultimoResultado = results[0];
-      if (!ultimoResultado.exam_id) return;
+      if (!selectedExamId || !profile?.id) return;
 
       try {
         setStudyPlanLoading(true);
         const response = await authFetch(
-          `/api/student/study-plan/${profile.id}/${ultimoResultado.exam_id}`
+          `/api/student/study-plan/${profile.id}/${selectedExamId}`
         );
         const data = await response.json();
 
@@ -474,16 +494,16 @@ export default function StudentDashboard() {
     }
 
     fetchStudyPlan();
-  }, [results, profile?.id]);
+  }, [selectedExamId, profile?.id]);
 
   // Abrir dialog com detalhes
   const handleViewDetails = (result: StudentResult) => {
-    setSelectedResult(result);
+    setDialogResult(result);
     setDialogOpen(true);
   };
 
-  // Último resultado (mais recente)
-  const ultimoResultado = results.length > 0 ? results[0] : null;
+  // Resultado selecionado para análise detalhada
+  const selectedResult = results.find(r => r.exam_id === selectedExamId) || (results.length > 0 ? results[0] : null);
 
   // Calcular totais
   const totalProvas = results.length;
@@ -511,26 +531,23 @@ export default function StudentDashboard() {
   }, [details?.studentWrongQuestions, selectedAreaFilter, selectedDifficultyFilter]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
-      <div className="max-w-6xl mx-auto">
-        {/* ========== HEADER ========== */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">
-              Olá, {profile?.name || 'Aluno'}! 👋
-            </h1>
-            <p className="text-gray-500 text-sm">
-              {profile?.student_number && `Matrícula: ${profile.student_number}`}
-              {profile?.turma && ` • Turma: ${profile.turma}`}
-            </p>
-          </div>
-          <Button variant="outline" onClick={signOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sair
-          </Button>
-        </div>
+    <DashboardLayout
+      navItems={studentNavItems}
+      activeNavItem={activeNav}
+      onNavItemClick={handleNavClick}
+    >
+      {/* Welcome Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+          Olá, {profile?.name?.split(' ')[0] || 'Aluno'}!
+        </h1>
+        <p className="text-slate-500 dark:text-slate-400 text-sm">
+          {profile?.student_number && `Matrícula: ${profile.student_number}`}
+          {profile?.turma && ` • Turma: ${profile.turma}`}
+        </p>
+      </div>
 
-        {/* Loading State */}
+      {/* Loading State */}
         {loading && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -567,30 +584,52 @@ export default function StudentDashboard() {
         )}
 
         {/* Dashboard com Resultados */}
-        {!loading && !error && ultimoResultado && (
+        {!loading && !error && selectedResult && (
           <div className="space-y-6">
-            {/* Card Principal - Última Prova */}
+            {/* Seletor de Simulado - aparece quando tem mais de 1 prova */}
+            {results.length > 1 && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Analisando:</span>
+                <Select value={selectedExamId} onValueChange={setSelectedExamId}>
+                  <SelectTrigger className="w-[280px]">
+                    <SelectValue placeholder="Selecione um simulado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {results.map((result, index) => (
+                      <SelectItem key={result.exam_id} value={result.exam_id}>
+                        {result.exams?.title || 'Prova'} - {new Date(result.created_at).toLocaleDateString('pt-BR')}
+                        {index === 0 && ' (mais recente)'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Card Principal - Prova Selecionada */}
             <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
               <CardHeader>
-                <CardDescription className="text-blue-100">Último Resultado</CardDescription>
+                <CardDescription className="text-blue-100">
+                  {results.length > 1 ? 'Resultado Selecionado' : 'Último Resultado'}
+                </CardDescription>
                 <CardTitle className="text-xl">
-                  {ultimoResultado.exams?.title || 'Prova'}
+                  {selectedResult.exams?.title || 'Prova'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-4xl font-bold">
-                      {ultimoResultado.tri_score?.toFixed(1) || '---'}
+                      {selectedResult.tri_score?.toFixed(1) || '---'}
                     </div>
                     <div className="text-blue-100 text-sm">TRI Geral</div>
                   </div>
                   <div className="text-right">
                     <Badge className="bg-white/20 text-white border-white/30">
-                      {classificarTRI(ultimoResultado.tri_score).emoji} {classificarTRI(ultimoResultado.tri_score).label}
+                      {classificarTRI(selectedResult.tri_score).emoji} {classificarTRI(selectedResult.tri_score).label}
                     </Badge>
                     <div className="text-blue-100 text-xs mt-2">
-                      {new Date(ultimoResultado.created_at).toLocaleDateString('pt-BR', {
+                      {new Date(selectedResult.created_at).toLocaleDateString('pt-BR', {
                         day: '2-digit',
                         month: 'long',
                         year: 'numeric'
@@ -618,28 +657,28 @@ export default function StudentDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <AreaTRICardAdmin
                     area="LC"
-                    studentTRI={ultimoResultado.tri_lc}
+                    studentTRI={selectedResult.tri_lc}
                     turmaMin={details.turmaStats.LC.min}
                     turmaAvg={details.turmaStats.LC.avg}
                     turmaMax={details.turmaStats.LC.max}
                   />
                   <AreaTRICardAdmin
                     area="CH"
-                    studentTRI={ultimoResultado.tri_ch}
+                    studentTRI={selectedResult.tri_ch}
                     turmaMin={details.turmaStats.CH.min}
                     turmaAvg={details.turmaStats.CH.avg}
                     turmaMax={details.turmaStats.CH.max}
                   />
                   <AreaTRICardAdmin
                     area="CN"
-                    studentTRI={ultimoResultado.tri_cn}
+                    studentTRI={selectedResult.tri_cn}
                     turmaMin={details.turmaStats.CN.min}
                     turmaAvg={details.turmaStats.CN.avg}
                     turmaMax={details.turmaStats.CN.max}
                   />
                   <AreaTRICardAdmin
                     area="MT"
-                    studentTRI={ultimoResultado.tri_mt}
+                    studentTRI={selectedResult.tri_mt}
                     turmaMin={details.turmaStats.MT.min}
                     turmaAvg={details.turmaStats.MT.avg}
                     turmaMax={details.turmaStats.MT.max}
@@ -657,10 +696,10 @@ export default function StudentDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {(['LC', 'CH', 'CN', 'MT'] as const).map(area => {
                     const config = AREA_CONFIG[area];
-                    const tri = area === 'LC' ? ultimoResultado.tri_lc
-                      : area === 'CH' ? ultimoResultado.tri_ch
-                      : area === 'CN' ? ultimoResultado.tri_cn
-                      : ultimoResultado.tri_mt;
+                    const tri = area === 'LC' ? selectedResult.tri_lc
+                      : area === 'CH' ? selectedResult.tri_ch
+                      : area === 'CN' ? selectedResult.tri_cn
+                      : selectedResult.tri_mt;
 
                     return (
                       <Card key={area} className={`border-2 ${config.colors.border}`}>
@@ -947,7 +986,7 @@ export default function StudentDashboard() {
                             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                               <Lightbulb className="h-3 w-3 text-amber-500" />
                               <span>
-                                Meta: +{plan.meta_proxima_faixa.pontos_necessarios} pontos para {plan.meta_proxima_faixa.proxima_faixa}
+                                Meta: +{Math.round(plan.meta_proxima_faixa.pontos_necessarios)} pontos para {plan.meta_proxima_faixa.proxima_faixa}
                               </span>
                             </div>
                           )}
@@ -1005,7 +1044,7 @@ export default function StudentDashboard() {
                                     className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
                                       ${areaConfig.colors.border} ${areaConfig.colors.text}
                                       hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors`}
-                                    title={lista.tri_min && lista.tri_max ? `Faixa TRI: ${lista.tri_min}-${lista.tri_max}` : ''}
+                                    title={lista.tri_min && lista.tri_max ? `Faixa TRI: ${Math.round(lista.tri_min)}-${Math.round(lista.tri_max)}` : ''}
                                   >
                                     <Download className="h-3 w-3" />
                                     {lista.titulo.replace(/Lista \d+ - /, '').replace(/\(\d+-\d+\)/, '').trim() || `Lista ${lista.ordem}`}
@@ -1018,9 +1057,12 @@ export default function StudentDashboard() {
                           {/* Próximas Listas (Bloqueadas) */}
                           {plan.listas_proximas && plan.listas_proximas.length > 0 && (
                             <div className="mt-3">
-                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                              <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                                 <Lock className="h-3 w-3 text-gray-400" />
                                 Próximas Listas:
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mb-2">
+                                Suba sua nota TRI para desbloquear mais listas de exercícios
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {plan.listas_proximas.map((lista) => (
@@ -1028,12 +1070,12 @@ export default function StudentDashboard() {
                                     key={lista.id}
                                     className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
                                       border-gray-300 text-gray-400 bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
-                                    title={`Desbloqueie subindo +${lista.pontos_para_desbloquear} pontos de TRI`}
+                                    title={`Desbloqueie subindo +${Math.round(lista.pontos_para_desbloquear)} pontos de TRI`}
                                   >
                                     <Lock className="h-3 w-3" />
-                                    <span>TRI {lista.tri_min}+</span>
+                                    <span>TRI {Math.round(lista.tri_min)}+</span>
                                     <span className="text-[10px] ml-1 opacity-70">
-                                      (+{lista.pontos_para_desbloquear} pts)
+                                      (+{Math.round(lista.pontos_para_desbloquear)} pts)
                                     </span>
                                   </div>
                                 ))}
@@ -1224,14 +1266,14 @@ export default function StudentDashboard() {
                       </div>
                       <div>
                         <div className="text-3xl font-bold text-green-700">
-                          {ultimoResultado.correct_answers ?? '---'}
+                          {selectedResult.correct_answers ?? '---'}
                         </div>
                         <div className="text-sm text-gray-600">Acertos</div>
                       </div>
                     </div>
-                    {ultimoResultado.correct_answers !== null && ultimoResultado.answers && (
+                    {selectedResult.correct_answers !== null && selectedResult.answers && (
                       <Progress
-                        value={(ultimoResultado.correct_answers / ultimoResultado.answers.length) * 100}
+                        value={(selectedResult.correct_answers / selectedResult.answers.length) * 100}
                         className="h-2 mt-3"
                       />
                     )}
@@ -1246,14 +1288,14 @@ export default function StudentDashboard() {
                       </div>
                       <div>
                         <div className="text-3xl font-bold text-red-700">
-                          {ultimoResultado.wrong_answers ?? '---'}
+                          {selectedResult.wrong_answers ?? '---'}
                         </div>
                         <div className="text-sm text-gray-600">Erros</div>
                       </div>
                     </div>
-                    {ultimoResultado.wrong_answers !== null && ultimoResultado.answers && (
+                    {selectedResult.wrong_answers !== null && selectedResult.answers && (
                       <Progress
-                        value={(ultimoResultado.wrong_answers / ultimoResultado.answers.length) * 100}
+                        value={(selectedResult.wrong_answers / selectedResult.answers.length) * 100}
                         className="h-2 mt-3 [&>div]:bg-red-500"
                       />
                     )}
@@ -1268,14 +1310,14 @@ export default function StudentDashboard() {
                       </div>
                       <div>
                         <div className="text-3xl font-bold text-gray-700">
-                          {ultimoResultado.blank_answers ?? '---'}
+                          {selectedResult.blank_answers ?? '---'}
                         </div>
                         <div className="text-sm text-gray-600">Em Branco</div>
                       </div>
                     </div>
-                    {ultimoResultado.blank_answers !== null && ultimoResultado.answers && (
+                    {selectedResult.blank_answers !== null && selectedResult.answers && (
                       <Progress
-                        value={(ultimoResultado.blank_answers / ultimoResultado.answers.length) * 100}
+                        value={(selectedResult.blank_answers / selectedResult.answers.length) * 100}
                         className="h-2 mt-3 [&>div]:bg-gray-400"
                       />
                     )}
@@ -1285,6 +1327,7 @@ export default function StudentDashboard() {
             </div>
 
             {/* ========== SEÇÃO: HISTÓRICO DE PROVAS ========== */}
+            <div ref={historyRef}>
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -1351,6 +1394,7 @@ export default function StudentDashboard() {
                 )}
               </CardContent>
             </Card>
+            </div>
 
             {/* Resumo Geral */}
             {totalProvas > 1 && (
@@ -1378,14 +1422,14 @@ export default function StudentDashboard() {
         {/* Dialog de Detalhes da Prova */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="max-w-md p-0 overflow-hidden">
-            {selectedResult && (
+            {dialogResult && (
               <>
                 {/* Header com gradiente */}
                 <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-6 text-white">
                   <DialogHeader>
-                    <DialogTitle className="text-white text-xl">{selectedResult.exams?.title || 'Análise da Prova'}</DialogTitle>
+                    <DialogTitle className="text-white text-xl">{dialogResult.exams?.title || 'Análise da Prova'}</DialogTitle>
                     <DialogDescription className="text-white/80">
-                      {new Date(selectedResult.created_at).toLocaleDateString('pt-BR', {
+                      {new Date(dialogResult.created_at).toLocaleDateString('pt-BR', {
                         weekday: 'long',
                         day: '2-digit',
                         month: 'long',
@@ -1398,15 +1442,15 @@ export default function StudentDashboard() {
                   <div className="mt-4 flex items-center justify-between">
                     <div>
                       <div className="text-white/70 text-sm">Sua nota TRI</div>
-                      <div className="text-5xl font-black">{selectedResult.tri_score?.toFixed(0) || '---'}</div>
+                      <div className="text-5xl font-black">{dialogResult.tri_score?.toFixed(0) || '---'}</div>
                     </div>
                     <div className={`px-4 py-2 rounded-full text-sm font-bold ${
-                      classificarTRI(selectedResult.tri_score).label === 'Excelente' ? 'bg-green-400/90 text-green-900' :
-                      classificarTRI(selectedResult.tri_score).label === 'Bom' ? 'bg-blue-400/90 text-blue-900' :
-                      classificarTRI(selectedResult.tri_score).label === 'Regular' ? 'bg-yellow-400/90 text-yellow-900' :
+                      classificarTRI(dialogResult.tri_score).label === 'Excelente' ? 'bg-green-400/90 text-green-900' :
+                      classificarTRI(dialogResult.tri_score).label === 'Bom' ? 'bg-blue-400/90 text-blue-900' :
+                      classificarTRI(dialogResult.tri_score).label === 'Regular' ? 'bg-yellow-400/90 text-yellow-900' :
                       'bg-red-400/90 text-red-900'
                     }`}>
-                      {classificarTRI(selectedResult.tri_score).emoji} {classificarTRI(selectedResult.tri_score).label}
+                      {classificarTRI(dialogResult.tri_score).emoji} {classificarTRI(dialogResult.tri_score).label}
                     </div>
                   </div>
                 </div>
@@ -1417,50 +1461,49 @@ export default function StudentDashboard() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
                       <div className="text-xs font-medium text-purple-600 uppercase tracking-wide">Linguagens</div>
-                      <div className="text-2xl font-bold text-purple-700 mt-1">{selectedResult.tri_lc?.toFixed(0) || '---'}</div>
+                      <div className="text-2xl font-bold text-purple-700 mt-1">{dialogResult.tri_lc?.toFixed(0) || '---'}</div>
                     </div>
                     <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
                       <div className="text-xs font-medium text-orange-600 uppercase tracking-wide">Humanas</div>
-                      <div className="text-2xl font-bold text-orange-700 mt-1">{selectedResult.tri_ch?.toFixed(0) || '---'}</div>
+                      <div className="text-2xl font-bold text-orange-700 mt-1">{dialogResult.tri_ch?.toFixed(0) || '---'}</div>
                     </div>
                     <div className="p-4 rounded-xl bg-green-50 border border-green-100">
                       <div className="text-xs font-medium text-green-600 uppercase tracking-wide">Natureza</div>
-                      <div className="text-2xl font-bold text-green-700 mt-1">{selectedResult.tri_cn?.toFixed(0) || '---'}</div>
+                      <div className="text-2xl font-bold text-green-700 mt-1">{dialogResult.tri_cn?.toFixed(0) || '---'}</div>
                     </div>
                     <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
                       <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Matemática</div>
-                      <div className="text-2xl font-bold text-blue-700 mt-1">{selectedResult.tri_mt?.toFixed(0) || '---'}</div>
+                      <div className="text-2xl font-bold text-blue-700 mt-1">{dialogResult.tri_mt?.toFixed(0) || '---'}</div>
                     </div>
                   </div>
 
                   {/* Estatísticas de respostas */}
                   <div className="flex gap-3">
                     <div className="flex-1 text-center p-4 bg-green-50 rounded-xl border border-green-100">
-                      <div className="text-3xl font-black text-green-600">{selectedResult.correct_answers ?? '-'}</div>
+                      <div className="text-3xl font-black text-green-600">{dialogResult.correct_answers ?? '-'}</div>
                       <div className="text-xs text-green-600 font-medium mt-1">Acertos</div>
                     </div>
                     <div className="flex-1 text-center p-4 bg-red-50 rounded-xl border border-red-100">
-                      <div className="text-3xl font-black text-red-600">{selectedResult.wrong_answers ?? '-'}</div>
+                      <div className="text-3xl font-black text-red-600">{dialogResult.wrong_answers ?? '-'}</div>
                       <div className="text-xs text-red-600 font-medium mt-1">Erros</div>
                     </div>
                     <div className="flex-1 text-center p-4 bg-gray-50 rounded-xl border border-gray-200">
-                      <div className="text-3xl font-black text-gray-500">{selectedResult.blank_answers ?? '-'}</div>
+                      <div className="text-3xl font-black text-gray-500">{dialogResult.blank_answers ?? '-'}</div>
                       <div className="text-xs text-gray-500 font-medium mt-1">Em Branco</div>
                     </div>
                   </div>
 
                   {/* Info adicional */}
                   <div className="flex items-center justify-between text-sm text-gray-500 pt-2 border-t">
-                    <span>{selectedResult.answers?.length || 180} questões</span>
-                    <span>{selectedResult.exams?.template_type || 'ENEM'}</span>
-                    {selectedResult.turma && <span>Turma {selectedResult.turma}</span>}
+                    <span>{dialogResult.answers?.length || 180} questões</span>
+                    <span>{dialogResult.exams?.template_type || 'ENEM'}</span>
+                    {dialogResult.turma && <span>Turma {dialogResult.turma}</span>}
                   </div>
                 </div>
               </>
             )}
           </DialogContent>
         </Dialog>
-      </div>
-    </div>
+    </DashboardLayout>
   );
 }

@@ -7749,7 +7749,10 @@ Para cada disciplina:
 
   // POST /api/admin/coordinators - Create coordinator
   // PROTEGIDO: Apenas super_admin
+  // Cria auth user primeiro, trigger cria profile básico, depois atualizamos profile
   app.post("/api/admin/coordinators", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    let userId: string | null = null;
+
     try {
       const { email, name, password, school_id, allowed_series } = req.body as CoordinatorInput;
 
@@ -7759,6 +7762,12 @@ Para cada disciplina:
 
       if (password.length < 8) {
         return res.status(400).json({ error: "Senha deve ter pelo menos 8 caracteres" });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: "Formato de email inválido" });
       }
 
       // Validate school exists
@@ -7772,31 +7781,118 @@ Para cada disciplina:
         return res.status(400).json({ error: "Escola não encontrada" });
       }
 
-      // Create auth user
+      // Check if email already exists in profiles
+      const { data: existingProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (existingProfile) {
+        return res.status(400).json({ error: "Este email já está cadastrado" });
+      }
+
+      // Step 1: Create auth user
+      // Trigger will create a basic profile (role=student by default)
+      console.log("[COORDINATOR] Creating auth user...");
       const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
-        user_metadata: { name, role: "school_admin", school_id }
+        user_metadata: {
+          name,
+          role: "school_admin",
+          school_id,
+          allowed_series: allowed_series || null
+        }
       });
 
       if (authError) {
         console.error("[COORDINATOR] Auth error:", authError.message);
-        return res.status(500).json({ error: "Erro ao criar usuário", details: authError.message });
+
+        if (authError.message.includes("already been registered") || authError.message.includes("already exists")) {
+          return res.status(400).json({ error: "Este email já está cadastrado" });
+        }
+
+        // If "Database error", the trigger might have failed
+        // Check if user was created despite the error
+        if (authError.message.includes("Database error")) {
+          console.log("[COORDINATOR] Database error - checking if user exists...");
+
+          // Wait a moment and check if user was created
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const { data: checkUser } = await supabaseAdmin
+            .from("profiles")
+            .select("id")
+            .eq("email", email)
+            .maybeSingle();
+
+          if (checkUser) {
+            console.log("[COORDINATOR] User was created despite error:", checkUser.id);
+            userId = checkUser.id;
+          } else {
+            return res.status(500).json({
+              error: "Erro ao criar usuário",
+              details: "O trigger do banco de dados falhou. Por favor, aplique a migration 20250113_fix_trigger_allowed_series.sql no Supabase SQL Editor."
+            });
+          }
+        } else {
+          return res.status(500).json({ error: "Erro ao criar usuário", details: authError.message });
+        }
       }
 
-      // Update profile with allowed_series (trigger already created base profile)
-      if (authUser.user && allowed_series !== undefined) {
-        await supabaseAdmin.from("profiles").update({ allowed_series }).eq("id", authUser.user.id);
+      if (!userId) {
+        if (!authUser?.user?.id) {
+          return res.status(500).json({ error: "Auth user criado mas sem ID" });
+        }
+        userId = authUser.user.id;
       }
+
+      console.log("[COORDINATOR] Auth user created:", userId);
+
+      // Step 2: Update profile with coordinator data
+      // The trigger may have created a basic profile, we need to update it
+      console.log("[COORDINATOR] Updating profile with coordinator data...");
+
+      // Give trigger time to finish
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      const { error: updateError } = await supabaseAdmin
+        .from("profiles")
+        .upsert({
+          id: userId,
+          email,
+          name,
+          role: "school_admin",
+          school_id,
+          allowed_series: allowed_series || null
+        });
+
+      if (updateError) {
+        console.error("[COORDINATOR] Profile update error:", updateError.message);
+        // Don't fail - user is created, profile might just need manual fix
+      }
+
+      console.log("[COORDINATOR] Coordinator created successfully:", userId);
 
       res.json({
         success: true,
-        coordinator: { id: authUser.user?.id, email, name, school_id, allowed_series }
+        coordinator: { id: userId, email, name, school_id, allowed_series }
       });
     } catch (error) {
       console.error("[COORDINATOR] Error:", error);
-      res.status(500).json({ error: "Erro interno ao criar coordenador" });
+
+      // Rollback auth user if created
+      if (userId) {
+        console.log("[COORDINATOR] Rolling back auth user:", userId);
+        await supabaseAdmin.auth.admin.deleteUser(userId).catch(e =>
+          console.error("[COORDINATOR] Auth rollback failed:", e)
+        );
+      }
+
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      res.status(500).json({ error: "Erro interno ao criar coordenador", details: errorMessage });
     }
   });
 
@@ -7875,6 +7971,7 @@ Para cada disciplina:
 
   // DELETE /api/admin/coordinators/:id - Delete coordinator
   // PROTEGIDO: Apenas super_admin
+  // Deleta tanto do profiles quanto do auth.users
   app.delete("/api/admin/coordinators/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
@@ -7889,13 +7986,25 @@ Para cada disciplina:
         return res.status(404).json({ error: "Coordenador não encontrado" });
       }
 
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+      // Delete profile first (in case cascade doesn't work)
+      const { error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .delete()
+        .eq("id", id);
 
-      if (error) {
-        console.error("[COORDINATOR] Delete error:", error);
+      if (profileError) {
+        console.error("[COORDINATOR] Profile delete error:", profileError);
+      }
+
+      // Delete auth user
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
+
+      if (authError) {
+        console.error("[COORDINATOR] Auth delete error:", authError);
         return res.status(500).json({ error: "Erro ao excluir coordenador" });
       }
 
+      console.log("[COORDINATOR] Deleted coordinator:", id);
       res.json({ success: true });
     } catch (error) {
       console.error("[COORDINATOR] Error:", error);

@@ -11,11 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { DashboardLayout, NavItemConfig } from '@/components/layout';
 import {
-  Loader2, LogOut, Users, FileText, BarChart2, School,
+  Loader2, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Eye, X, Download,
-  BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet
+  BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet,
+  LayoutDashboard, ClipboardList, GraduationCap, List, UserCog
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -200,9 +202,26 @@ function getTriFaixaLabel(tri: number | null): string {
   return 'Alto';
 }
 
+// Navigation items for coordinator dashboard
+const getCoordinatorNavItems = (isSuperAdmin: boolean): NavItemConfig[] => {
+  const items: NavItemConfig[] = [
+    { id: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
+    { id: 'resultados', label: 'Resultados', icon: ClipboardList },
+    { id: 'turmas', label: 'Turmas', icon: GraduationCap },
+    { id: 'alunos', label: 'Alunos', icon: Users },
+    { id: 'listas', label: 'Listas', icon: List },
+  ];
+  if (isSuperAdmin) {
+    items.push({ id: 'coordenadores', label: 'Coordenadores', icon: UserCog });
+  }
+  return items;
+};
+
 export default function EscolaPage() {
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const { toast } = useToast();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const navItems = getCoordinatorNavItems(isSuperAdmin);
 
   // Tab state
   const [activeTab, setActiveTab] = useState('visao-geral');
@@ -457,41 +476,47 @@ export default function EscolaPage() {
     ? [...new Set(results.map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort()
     : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort();
 
+  // Handle nav item click - sync with tabs
+  const handleNavClick = (id: string) => {
+    setActiveTab(id);
+  };
+
   if (loadingDashboard && !dashboardData) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-      </div>
+      <DashboardLayout
+        navItems={navItems}
+        activeNavItem={activeTab}
+        onNavItemClick={handleNavClick}
+      >
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <School className="h-8 w-8 text-blue-600" />
-            <div>
-              <h1 className="text-xl font-bold">Portal da Escola</h1>
-              <p className="text-sm text-gray-500">
-                {profile?.name} - Coordenador(a)
-                {profile?.allowed_series && profile.allowed_series.length > 0 && (
-                  <span className="ml-2 text-blue-600">
-                    ({profile.allowed_series.join(', ')})
-                  </span>
-                )}
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" onClick={signOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sair
-          </Button>
-        </div>
-      </header>
+    <DashboardLayout
+      navItems={navItems}
+      activeNavItem={activeTab}
+      onNavItemClick={handleNavClick}
+    >
+      {/* Welcome Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+          Portal da Escola
+        </h1>
+        <p className="text-slate-500 dark:text-slate-400 text-sm">
+          {profile?.name} - Coordenador(a)
+          {profile?.allowed_series && profile.allowed_series.length > 0 && (
+            <span className="ml-2 text-primary">
+              ({profile.allowed_series.join(', ')})
+            </span>
+          )}
+        </p>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      {/* Content */}
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <Card>
@@ -1281,7 +1306,6 @@ export default function EscolaPage() {
             </Card>
           </TabsContent>
         </Tabs>
-      </main>
 
       {/* Modal: Ver Alunos da Turma */}
       <Dialog open={!!selectedTurmaModal} onOpenChange={(open) => !open && setSelectedTurmaModal(null)}>
@@ -1488,6 +1512,6 @@ export default function EscolaPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardLayout>
   );
 }
