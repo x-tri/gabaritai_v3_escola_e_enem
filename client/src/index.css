@@ -4,6 +4,15 @@
 
 /* LIGHT MODE */
 :root {
+  /* XTRI Brand Colors */
+  --xtri-cyan: #33B5E5;
+  --xtri-cyan-light: #5AC8ED;
+  --xtri-cyan-dark: #1E9FCC;
+  --xtri-orange: #F26A4B;
+  --xtri-orange-light: #F58A70;
+  --xtri-orange-dark: #E04E2D;
+  --xtri-dark: #1a2744;
+
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
   --opaque-button-border-intensity: -8;
@@ -15,34 +24,34 @@
   --card: 0 0% 100%; /* Branco para cards */
   --card-foreground: 210 6% 12%;
   --card-border: 210 3% 90%;
-  /* Cores Hospital QUESTIONA - Azul dominante */
-  --sidebar: 217 91% 48%; /* Azul hospital (#2563eb) */
+  /* XTRI Sidebar colors */
+  --sidebar: 199 77% 55%; /* Cyan XTRI (#33B5E5) */
   --sidebar-foreground: 0 0% 100%; /* Branco para textos no sidebar */
-  --sidebar-border: 217 91% 42%; /* Azul mais escuro para bordas */
-  --sidebar-primary: 217 91% 48%;
-  --sidebar-primary-foreground: 217 91% 98%;
+  --sidebar-border: 199 77% 46%; /* Cyan mais escuro para bordas */
+  --sidebar-primary: 199 77% 55%;
+  --sidebar-primary-foreground: 199 77% 98%;
   --sidebar-accent: 210 4% 88%;
   --sidebar-accent-foreground: 210 6% 12%;
-  --sidebar-ring: 217 91% 48%;
+  --sidebar-ring: 199 77% 55%;
   --popover: 210 4% 92%;
   --popover-foreground: 210 6% 12%;
   --popover-border: 210 4% 86%;
-  --primary: 262 83% 58%; /* Roxo vibrante como no outro site */
+  --primary: 199 77% 55%; /* Cyan XTRI como cor primária */
   --primary-foreground: 0 0% 100%;
   --secondary: 210 5% 86%;
   --secondary-foreground: 210 6% 12%;
   --muted: 210 5% 88%;
   --muted-foreground: 210 5% 35%;
-  --accent: 210 6% 90%;
-  --accent-foreground: 210 6% 12%;
+  --accent: 14 87% 62%; /* Orange XTRI como accent */
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 42%;
   --destructive-foreground: 0 84% 98%;
   --input: 210 5% 75%;
-  --ring: 217 91% 48%;
-  --chart-1: 262 83% 58%; /* Roxo */
-  --chart-2: 217 91% 60%; /* Azul */
+  --ring: 199 77% 55%;
+  --chart-1: 199 77% 55%; /* Cyan XTRI */
+  --chart-2: 14 87% 62%; /* Orange XTRI */
   --chart-3: 142 71% 45%; /* Verde */
-  --chart-4: 25 95% 53%; /* Laranja */
+  --chart-4: 234 89% 74%; /* Índigo */
   --chart-5: 0 84% 60%; /* Vermelho */
   --font-sans: Inter, sans-serif;
   --font-serif: Georgia, serif;
@@ -89,6 +98,15 @@
 }
 
 .dark {
+  /* XTRI Brand Colors (same in dark) */
+  --xtri-cyan: #33B5E5;
+  --xtri-cyan-light: #5AC8ED;
+  --xtri-cyan-dark: #1E9FCC;
+  --xtri-orange: #F26A4B;
+  --xtri-orange-light: #F58A70;
+  --xtri-orange-dark: #E04E2D;
+  --xtri-dark: #1a2744;
+
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
@@ -103,30 +121,30 @@
   --sidebar: 210 4% 12%;
   --sidebar-foreground: 210 4% 96%;
   --sidebar-border: 210 4% 18%;
-  --sidebar-primary: 217 91% 52%;
-  --sidebar-primary-foreground: 217 91% 98%;
+  --sidebar-primary: 199 77% 55%; /* Cyan XTRI */
+  --sidebar-primary-foreground: 199 77% 98%;
   --sidebar-accent: 210 5% 16%;
   --sidebar-accent-foreground: 210 4% 96%;
-  --sidebar-ring: 217 91% 52%;
+  --sidebar-ring: 199 77% 55%;
   --popover: 210 4% 14%;
   --popover-foreground: 210 4% 96%;
   --popover-border: 210 4% 20%;
-  --primary: 262 83% 58%; /* Roxo vibrante como no outro site */
+  --primary: 199 77% 55%; /* Cyan XTRI */
   --primary-foreground: 0 0% 100%;
   --secondary: 210 5% 18%;
   --secondary-foreground: 210 4% 96%;
   --muted: 210 5% 16%;
   --muted-foreground: 210 5% 65%;
-  --accent: 210 5% 14%;
-  --accent-foreground: 210 4% 96%;
+  --accent: 14 87% 62%; /* Orange XTRI */
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 38%;
   --destructive-foreground: 0 84% 98%;
   --input: 210 5% 30%;
-  --ring: 217 91% 52%;
-  --chart-1: 217 91% 65%;
-  --chart-2: 195 77% 62%;
+  --ring: 199 77% 55%;
+  --chart-1: 199 77% 65%; /* Cyan XTRI light */
+  --chart-2: 14 87% 68%; /* Orange XTRI light */
   --chart-3: 142 76% 64%;
-  --chart-4: 43 96% 68%;
+  --chart-4: 234 89% 74%;
   --chart-5: 27 87% 65%;
   --shadow-2xs: 0px 2px 0px 0px hsl(210 4% 96% / 0.00);
   --shadow-xs: 0px 2px 0px 0px hsl(210 4% 96% / 0.00);

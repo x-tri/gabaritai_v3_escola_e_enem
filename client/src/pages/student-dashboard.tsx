@@ -28,16 +28,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  TrendingUp, TrendingDown, Minus, BookOpen, Brain, Calculator, Leaf,
-  Target, CheckCircle2, XCircle, MinusCircle, History, Eye, Calendar, BarChart3,
-  AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb, Download, FileText,
-  Lock, Unlock, LayoutDashboard, Settings
+  TrendingUp, TrendingDown, Minus, Target, CheckCircle2, XCircle, MinusCircle,
+  History, Eye, Calendar, BarChart3, AlertTriangle, Users, GraduationCap,
+  ArrowRight, Lightbulb, Download, Lock, Unlock, Trophy, Activity, FileBarChart,
+  Bell
 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { DashboardLayout, NavItemConfig } from '@/components/layout';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -47,11 +44,16 @@ import {
   BarChart,
   Bar,
   Cell,
-  Legend,
   ScatterChart,
   Scatter,
   ZAxis,
+  AreaChart,
+  Area,
 } from 'recharts';
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 interface StudentResult {
   id: string;
@@ -155,265 +157,338 @@ interface StudyPlanData {
   studyPlan: StudyPlanArea[];
 }
 
-// Função para classificar TRI
-const classificarTRI = (tri: number | null): { label: string; color: string; emoji: string } => {
-  if (!tri || tri === 0) return { label: 'Não calculado', color: 'bg-gray-100 text-gray-800', emoji: '⚪' };
-  if (tri < 450) return { label: 'Crítico', color: 'bg-red-100 text-red-800', emoji: '🔴' };
-  if (tri < 550) return { label: 'Abaixo da média', color: 'bg-orange-100 text-orange-800', emoji: '🟠' };
-  if (tri < 650) return { label: 'Na média', color: 'bg-yellow-100 text-yellow-800', emoji: '🟡' };
-  if (tri < 750) return { label: 'Acima da média', color: 'bg-green-100 text-green-800', emoji: '🟢' };
-  return { label: 'Excelente', color: 'bg-blue-100 text-blue-800', emoji: '🔵' };
+// ============================================================================
+// CONSTANTS - XTRI BRAND COLORS
+// ============================================================================
+
+const XTRI_COLORS = {
+  cyan: '#33B5E5',
+  cyanLight: '#5AC8ED',
+  cyanDark: '#1E9FCC',
+  orange: '#F26A4B',
+  orangeLight: '#F58A70',
+  orangeDark: '#E04E2D',
+  dark: '#1a2744',
 };
 
-// Configuração das áreas - igual ao admin
+// Configuração das áreas com cores XTRI
 const AREA_CONFIG = {
   LC: {
     name: 'Linguagens',
-    color: 'purple',
-    colors: {
-      border: 'border-purple-200 dark:border-purple-800',
-      text: 'text-purple-700 dark:text-purple-300',
-      bar: 'bg-purple-500',
-      marker: 'bg-purple-600'
-    }
+    shortName: 'LC',
+    color: XTRI_COLORS.cyan,
+    gradient: 'from-[#33B5E5] to-[#1E9FCC]',
+    bgLight: 'bg-cyan-50 dark:bg-cyan-950/30',
+    border: 'border-cyan-200 dark:border-cyan-800',
+    text: 'text-cyan-600 dark:text-cyan-400',
   },
   CH: {
     name: 'Humanas',
-    color: 'orange',
-    colors: {
-      border: 'border-orange-200 dark:border-orange-800',
-      text: 'text-orange-700 dark:text-orange-300',
-      bar: 'bg-orange-500',
-      marker: 'bg-orange-600'
-    }
+    shortName: 'CH',
+    color: XTRI_COLORS.orange,
+    gradient: 'from-[#F26A4B] to-[#E04E2D]',
+    bgLight: 'bg-orange-50 dark:bg-orange-950/30',
+    border: 'border-orange-200 dark:border-orange-800',
+    text: 'text-orange-600 dark:text-orange-400',
   },
   CN: {
     name: 'Natureza',
-    color: 'green',
-    colors: {
-      border: 'border-green-200 dark:border-green-800',
-      text: 'text-green-700 dark:text-green-300',
-      bar: 'bg-green-500',
-      marker: 'bg-green-600'
-    }
+    shortName: 'CN',
+    color: '#10b981',
+    gradient: 'from-emerald-500 to-teal-600',
+    bgLight: 'bg-emerald-50 dark:bg-emerald-950/30',
+    border: 'border-emerald-200 dark:border-emerald-800',
+    text: 'text-emerald-600 dark:text-emerald-400',
   },
   MT: {
     name: 'Matemática',
-    color: 'blue',
-    colors: {
-      border: 'border-blue-200 dark:border-blue-800',
-      text: 'text-blue-700 dark:text-blue-300',
-      bar: 'bg-blue-500',
-      marker: 'bg-blue-600'
-    }
+    shortName: 'MT',
+    color: '#6366f1',
+    gradient: 'from-indigo-500 to-violet-600',
+    bgLight: 'bg-indigo-50 dark:bg-indigo-950/30',
+    border: 'border-indigo-200 dark:border-indigo-800',
+    text: 'text-indigo-600 dark:text-indigo-400',
   },
 };
 
-// Componente de Card de Loading
-function LoadingCard() {
-  return (
-    <Card>
-      <CardContent className="p-6">
-        <Skeleton className="h-6 w-24 mb-2" />
-        <Skeleton className="h-12 w-20 mb-2" />
-        <Skeleton className="h-3 w-full mb-4" />
-        <Skeleton className="h-16 w-full" />
-      </CardContent>
-    </Card>
-  );
+// Classificação TRI
+const classificarTRI = (tri: number | null): { label: string; color: string; bgColor: string; emoji: string } => {
+  if (!tri || tri === 0) return { label: 'Não calculado', color: 'text-gray-500', bgColor: 'bg-gray-100', emoji: '⚪' };
+  if (tri < 450) return { label: 'Crítico', color: 'text-red-600', bgColor: 'bg-red-50', emoji: '🔴' };
+  if (tri < 550) return { label: 'Abaixo da média', color: 'text-orange-600', bgColor: 'bg-orange-50', emoji: '🟠' };
+  if (tri < 650) return { label: 'Na média', color: 'text-yellow-600', bgColor: 'bg-yellow-50', emoji: '🟡' };
+  if (tri < 750) return { label: 'Acima da média', color: 'text-green-600', bgColor: 'bg-green-50', emoji: '🟢' };
+  return { label: 'Excelente', color: 'text-blue-600', bgColor: 'bg-blue-50', emoji: '🔵' };
+};
+
+// ============================================================================
+// STAT CARD COMPONENT - NexLink Style with XTRI Colors
+// ============================================================================
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ElementType;
+  gradient: string;
+  delay?: number;
 }
 
-// Card de Área TRI - Design igual ao Admin
-function AreaTRICardAdmin({
-  area,
-  studentTRI,
-  turmaMin,
-  turmaAvg,
-  turmaMax,
-}: {
-  area: keyof typeof AREA_CONFIG;
-  studentTRI: number | null;
-  turmaMin: number;
-  turmaAvg: number;
-  turmaMax: number;
-}) {
-  const config = AREA_CONFIG[area];
-  const colors = config.colors;
-
-  // Calcular posição do aluno na barra (0-100%)
-  const range = turmaMax - turmaMin;
-  const position = range > 0 && studentTRI
-    ? ((studentTRI - turmaMin) / range) * 100
-    : 50;
-
+function StatCard({ title, value, subtitle, icon: Icon, gradient, delay = 0 }: StatCardProps) {
   return (
-    <Card className={`border-2 ${colors.border}`}>
-      <CardContent className="p-6">
-        <div className="space-y-4">
-          {/* Nome da Área e Nota */}
-          <div>
-            <h3 className="text-lg font-bold mb-1">{config.name}</h3>
-            <p className={`text-4xl font-bold ${colors.text}`}>
-              {studentTRI?.toFixed(1) || '---'}
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">TRI</p>
-          </div>
+    <div
+      className={`
+        relative overflow-hidden rounded-2xl p-6
+        bg-gradient-to-br ${gradient}
+        shadow-xl shadow-black/10
+        transform hover:scale-[1.02] hover:-translate-y-1
+        transition-all duration-300 ease-out
+      `}
+      style={{
+        animation: `fadeSlideUp 0.5s ease-out ${delay}ms both`,
+      }}
+    >
+      {/* Background decoration */}
+      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16" />
+      <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/10 rounded-full translate-y-12 -translate-x-12" />
 
-          {/* Barra de Progresso com Marcador */}
-          <div className="space-y-2">
-            <div className="relative h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              {/* Fundo colorido transparente */}
-              <div className={`absolute top-0 left-0 h-full ${colors.bar} opacity-30 w-full`}></div>
-              {/* Marcador da posição do aluno */}
-              {studentTRI && (
-                <div
-                  className={`absolute top-0 h-full w-1 ${colors.marker} shadow-lg`}
-                  style={{ left: `${Math.max(0, Math.min(100, position))}%` }}
-                ></div>
-              )}
-            </div>
-          </div>
-
-          {/* Estatísticas da Turma */}
-          <div className="pt-2 border-t border-border">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Estatísticas da Turma</p>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <div>
-                <p className="text-muted-foreground">Mínimo</p>
-                <p className="font-bold">{turmaMin.toFixed(1)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Média</p>
-                <p className="font-bold">{turmaAvg.toFixed(1)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Máximo</p>
-                <p className="font-bold">{turmaMax.toFixed(1)}</p>
-              </div>
-            </div>
+      <div className="relative z-10">
+        <div className="flex items-start justify-between mb-4">
+          <div className="p-3 rounded-xl bg-white/20 backdrop-blur-sm">
+            <Icon className="w-6 h-6 text-white" />
           </div>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
 
-// Componente de Evolução
-function EvolutionIndicator({ current, previous }: { current: number | null; previous: number | null }) {
-  if (!current || !previous) return <Minus className="h-4 w-4 text-gray-400" />;
-
-  const diff = current - previous;
-
-  if (diff > 10) {
-    return (
-      <div className="flex items-center gap-1 text-green-600">
-        <TrendingUp className="h-4 w-4" />
-        <span className="text-xs font-medium">+{diff.toFixed(0)}</span>
+        <p className="text-white/80 text-sm font-medium mb-1">{title}</p>
+        <p className="text-3xl font-bold text-white tracking-tight">{value}</p>
+        {subtitle && (
+          <p className="text-white/60 text-xs mt-1">{subtitle}</p>
+        )}
       </div>
-    );
-  } else if (diff < -10) {
-    return (
-      <div className="flex items-center gap-1 text-red-600">
-        <TrendingDown className="h-4 w-4" />
-        <span className="text-xs font-medium">{diff.toFixed(0)}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1 text-gray-500">
-      <Minus className="h-4 w-4" />
-      <span className="text-xs">~</span>
     </div>
   );
 }
 
-// Card de Dificuldade
-function DifficultyCard({
-  difficulty,
-  stats,
-}: {
+// ============================================================================
+// AREA CARD COMPONENT - NexLink Style
+// ============================================================================
+
+interface AreaCardProps {
+  area: keyof typeof AREA_CONFIG;
+  tri: number | null;
+  turmaStats?: { min: number; max: number; avg: number };
+  delay?: number;
+}
+
+function AreaCard({ area, tri, turmaStats, delay = 0 }: AreaCardProps) {
+  const config = AREA_CONFIG[area];
+  const classification = classificarTRI(tri);
+
+  const getPositionPercent = () => {
+    if (!tri || !turmaStats) return 50;
+    const range = turmaStats.max - turmaStats.min;
+    if (range === 0) return 50;
+    return Math.min(100, Math.max(0, ((tri - turmaStats.min) / range) * 100));
+  };
+
+  const positionPercent = getPositionPercent();
+  const isAboveAvg = tri && turmaStats && tri > turmaStats.avg;
+  const diff = tri && turmaStats ? Math.abs(tri - turmaStats.avg) : 0;
+
+  return (
+    <div
+      className={`
+        relative overflow-hidden rounded-2xl border-2 ${config.border}
+        bg-white dark:bg-gray-900
+        shadow-lg shadow-black/5 hover:shadow-xl
+        transform hover:-translate-y-1
+        transition-all duration-300
+      `}
+      style={{
+        animation: `fadeSlideUp 0.5s ease-out ${delay}ms both`,
+      }}
+    >
+      {/* Top gradient bar */}
+      <div className={`h-1.5 bg-gradient-to-r ${config.gradient}`} />
+
+      <div className="p-5">
+        {/* Title and Score */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${config.gradient} flex items-center justify-center shadow-lg`}>
+              <span className="text-white text-sm font-bold">{config.shortName}</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{config.name}</h3>
+              <p className="text-xs text-gray-500">Nota TRI</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className={`text-3xl font-bold ${config.text}`}>
+              {tri?.toFixed(0) || '---'}
+            </p>
+          </div>
+        </div>
+
+        {/* Progress bar showing position in turma */}
+        {turmaStats && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>Min: {turmaStats.min.toFixed(0)}</span>
+              <span>Média: {turmaStats.avg.toFixed(0)}</span>
+              <span>Max: {turmaStats.max.toFixed(0)}</span>
+            </div>
+            <div className="relative h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+              <div className={`absolute inset-0 bg-gradient-to-r ${config.gradient} opacity-20`} />
+
+              {/* Average marker */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-gray-400 z-10"
+                style={{ left: `${((turmaStats.avg - turmaStats.min) / (turmaStats.max - turmaStats.min)) * 100}%` }}
+              />
+
+              {/* Student position marker */}
+              {tri && (
+                <div
+                  className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-gradient-to-br ${config.gradient} border-2 border-white shadow-lg z-20 transition-all duration-500`}
+                  style={{ left: `calc(${positionPercent}% - 8px)` }}
+                />
+              )}
+            </div>
+
+            {/* Comparison badge */}
+            {tri && (
+              <div className={`flex items-center gap-1 text-xs font-medium ${isAboveAvg ? 'text-emerald-600' : 'text-orange-600'}`}>
+                {isAboveAvg ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                <span>
+                  {isAboveAvg
+                    ? `+${diff.toFixed(0)} pts acima da média`
+                    : `-${diff.toFixed(0)} pts abaixo da média`
+                  }
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// DIFFICULTY CARD COMPONENT
+// ============================================================================
+
+interface DifficultyCardProps {
   difficulty: 'easy' | 'medium' | 'hard';
   stats: { total: number; correct: number; wrong: number };
-}) {
+}
+
+function DifficultyCard({ difficulty, stats }: DifficultyCardProps) {
   const config = {
-    easy: { label: 'Fáceis', emoji: '🟢', color: 'border-green-200', textColor: 'text-green-600', bgColor: 'bg-green-50' },
-    medium: { label: 'Médias', emoji: '🟡', color: 'border-yellow-200', textColor: 'text-yellow-600', bgColor: 'bg-yellow-50' },
-    hard: { label: 'Difíceis', emoji: '🔴', color: 'border-red-200', textColor: 'text-red-600', bgColor: 'bg-red-50' },
+    easy: {
+      label: 'Fáceis',
+      emoji: '🟢',
+      gradient: 'from-emerald-500 to-teal-600',
+      bg: 'bg-emerald-50 dark:bg-emerald-950/30',
+      border: 'border-emerald-200 dark:border-emerald-800',
+      text: 'text-emerald-600'
+    },
+    medium: {
+      label: 'Médias',
+      emoji: '🟡',
+      gradient: 'from-amber-500 to-orange-600',
+      bg: 'bg-amber-50 dark:bg-amber-950/30',
+      border: 'border-amber-200 dark:border-amber-800',
+      text: 'text-amber-600'
+    },
+    hard: {
+      label: 'Difíceis',
+      emoji: '🔴',
+      gradient: 'from-red-500 to-rose-600',
+      bg: 'bg-red-50 dark:bg-red-950/30',
+      border: 'border-red-200 dark:border-red-800',
+      text: 'text-red-600'
+    },
   };
 
   const c = config[difficulty];
   const percentage = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
 
   return (
-    <Card className={`${c.color} ${c.bgColor}`}>
-      <CardContent className="pt-4 pb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">{c.emoji} {c.label}</span>
-          <span className={`text-2xl font-bold ${c.textColor}`}>{percentage}%</span>
-        </div>
-        <Progress value={percentage} className="h-2 mb-2" />
-        <div className="flex justify-between text-xs text-gray-600">
-          <span>Acertei: {stats.correct}/{stats.total}</span>
-          <span>Errei: {stats.wrong}</span>
-        </div>
-      </CardContent>
-    </Card>
+    <div className={`rounded-2xl p-5 ${c.bg} border-2 ${c.border}`}>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {c.emoji} {c.label}
+        </span>
+        <span className={`text-2xl font-bold ${c.text}`}>{percentage}%</span>
+      </div>
+      <div className="relative h-2.5 bg-white/50 dark:bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className={`absolute inset-y-0 left-0 bg-gradient-to-r ${c.gradient} rounded-full transition-all duration-500`}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-2 text-xs text-gray-500">
+        <span>Acertei: {stats.correct}/{stats.total}</span>
+        <span>Errei: {stats.wrong}</span>
+      </div>
+    </div>
   );
 }
 
-// Navigation items for student dashboard
-const studentNavItems: NavItemConfig[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'history', label: 'Histórico', icon: History },
-  { id: 'settings', label: 'Configurações', icon: Settings },
-];
+// ============================================================================
+// LOADING SKELETON
+// ============================================================================
+
+function LoadingCard() {
+  return (
+    <div className="rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-lg animate-pulse">
+      <Skeleton className="h-10 w-10 rounded-xl mb-4" />
+      <Skeleton className="h-4 w-20 mb-2" />
+      <Skeleton className="h-8 w-24" />
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export default function StudentDashboard() {
   const { profile } = useAuth();
+
+  // Data State
   const [results, setResults] = useState<StudentResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dialogResult, setDialogResult] = useState<StudentResult | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState('dashboard');
-  const historyRef = useRef<HTMLDivElement>(null);
-
-  // Estado para seleção de qual simulado analisar em detalhe
   const [selectedExamId, setSelectedExamId] = useState<string>('');
-
-  // Estados para análise detalhada
   const [details, setDetails] = useState<DashboardDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [selectedAreaFilter, setSelectedAreaFilter] = useState<string>('all');
-  const [selectedDifficultyFilter, setSelectedDifficultyFilter] = useState<string>('all');
-
-  // Estado para Plano de Estudos
   const [studyPlan, setStudyPlan] = useState<StudyPlanData | null>(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
 
-  // Estado para seleção de linhas no gráfico de evolução
+  // Dialog state
+  const [dialogResult, setDialogResult] = useState<StudentResult | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Filters
+  const [selectedAreaFilter, setSelectedAreaFilter] = useState<string>('all');
+  const [selectedDifficultyFilter, setSelectedDifficultyFilter] = useState<string>('all');
+
+  // Visible lines for evolution chart
   const [visibleLines, setVisibleLines] = useState({
-    LC: true,
-    CH: true,
-    CN: true,
-    MT: true,
-    geral: true
+    LC: true, CH: true, CN: true, MT: true, geral: true
   });
 
   const toggleLine = (line: keyof typeof visibleLines) => {
     setVisibleLines(prev => ({ ...prev, [line]: !prev[line] }));
   };
 
-  // Handle navigation click
-  const handleNavClick = (id: string) => {
-    setActiveNav(id);
-    if (id === 'history' && historyRef.current) {
-      historyRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+  // Refs
+  const historyRef = useRef<HTMLDivElement>(null);
 
-  // Buscar resultados do aluno
+  // Fetch results
   useEffect(() => {
     async function fetchResults() {
       if (!profile?.id) {
@@ -428,7 +503,6 @@ export default function StudentDashboard() {
 
         if (data.success) {
           setResults(data.results || []);
-          // Inicializa com o último resultado (mais recente)
           if (data.results?.length > 0 && !selectedExamId) {
             setSelectedExamId(data.results[0].exam_id);
           }
@@ -446,16 +520,14 @@ export default function StudentDashboard() {
     fetchResults();
   }, [profile?.id]);
 
-  // Buscar detalhes quando selecionar um exame
+  // Fetch details
   useEffect(() => {
     async function fetchDetails() {
       if (!selectedExamId || !profile?.id) return;
 
       try {
         setDetailsLoading(true);
-        const response = await fetch(
-          `/api/student-dashboard-details/${profile.id}/${selectedExamId}`
-        );
+        const response = await fetch(`/api/student-dashboard-details/${profile.id}/${selectedExamId}`);
         const data = await response.json();
 
         if (data.success) {
@@ -471,16 +543,14 @@ export default function StudentDashboard() {
     fetchDetails();
   }, [selectedExamId, profile?.id]);
 
-  // Buscar plano de estudos quando selecionar um exame
+  // Fetch study plan
   useEffect(() => {
     async function fetchStudyPlan() {
       if (!selectedExamId || !profile?.id) return;
 
       try {
         setStudyPlanLoading(true);
-        const response = await authFetch(
-          `/api/student/study-plan/${profile.id}/${selectedExamId}`
-        );
+        const response = await authFetch(`/api/student/study-plan/${profile.id}/${selectedExamId}`);
         const data = await response.json();
 
         if (data.success) {
@@ -496,22 +566,13 @@ export default function StudentDashboard() {
     fetchStudyPlan();
   }, [selectedExamId, profile?.id]);
 
-  // Abrir dialog com detalhes
-  const handleViewDetails = (result: StudentResult) => {
-    setDialogResult(result);
-    setDialogOpen(true);
-  };
-
-  // Resultado selecionado para análise detalhada
+  // Computed values
   const selectedResult = results.find(r => r.exam_id === selectedExamId) || (results.length > 0 ? results[0] : null);
-
-  // Calcular totais
   const totalProvas = results.length;
   const mediaTriGeral = results.length > 0
     ? results.filter(r => r.tri_score).reduce((acc, r) => acc + (r.tri_score || 0), 0) / results.filter(r => r.tri_score).length
     : 0;
 
-  // Função para obter TRI da prova anterior
   const getPreviousTRI = (index: number): number | null => {
     if (index + 1 < results.length) {
       return results[index + 1].tri_score;
@@ -519,10 +580,8 @@ export default function StudentDashboard() {
     return null;
   };
 
-  // Filtrar questões erradas
   const filteredWrongQuestions = useMemo(() => {
     if (!details?.studentWrongQuestions) return [];
-
     return details.studentWrongQuestions.filter(q => {
       const areaMatch = selectedAreaFilter === 'all' || q.area === selectedAreaFilter;
       const diffMatch = selectedDifficultyFilter === 'all' || q.difficulty === selectedDifficultyFilter;
@@ -530,297 +589,215 @@ export default function StudentDashboard() {
     });
   }, [details?.studentWrongQuestions, selectedAreaFilter, selectedDifficultyFilter]);
 
-  return (
-    <DashboardLayout
-      navItems={studentNavItems}
-      activeNavItem={activeNav}
-      onNavItemClick={handleNavClick}
-    >
-      {/* Welcome Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Olá, {profile?.name?.split(' ')[0] || 'Aluno'}!
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400 text-sm">
-          {profile?.student_number && `Matrícula: ${profile.student_number}`}
-          {profile?.turma && ` • Turma: ${profile.turma}`}
-        </p>
-      </div>
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
-      {/* Loading State */}
-        {loading && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <LoadingCard />
-              <LoadingCard />
-              <LoadingCard />
-              <LoadingCard />
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-cyan-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-cyan-950/10">
+      {/* CSS Animation */}
+      <style>{`
+        @keyframes fadeSlideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
+          <div className="flex items-center gap-4">
+            {/* XTRI Logo */}
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <span className="text-white font-black text-sm">X</span>
+              </div>
+              <span className="font-bold text-lg text-gray-900 dark:text-white hidden sm:block">XTRI</span>
             </div>
+
+            <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+
+            <div>
+              <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                Olá, {profile?.name?.split(' ')[0] || 'Aluno'}!
+              </h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {profile?.student_number && `Matrícula: ${profile.student_number}`}
+                {profile?.turma && ` • Turma: ${profile.turma}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Exam Selector */}
+            {results.length > 1 && (
+              <Select value={selectedExamId} onValueChange={setSelectedExamId}>
+                <SelectTrigger className="w-[180px] lg:w-[260px] border-cyan-200 focus:ring-cyan-500 bg-white dark:bg-gray-800">
+                  <SelectValue placeholder="Selecione um simulado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {results.map((result, index) => (
+                    <SelectItem key={result.exam_id} value={result.exam_id}>
+                      {result.exams?.title || 'Prova'} - {new Date(result.created_at).toLocaleDateString('pt-BR')}
+                      {index === 0 && ' (mais recente)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {/* Notification Bell */}
+            <button className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+              <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F26A4B] rounded-full" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8">
+
+        {/* Loading State */}
+        {loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => <LoadingCard key={i} />)}
           </div>
         )}
 
         {/* Error State */}
         {error && !loading && (
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="pt-6">
-              <p className="text-red-600">{error}</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-2xl bg-red-50 dark:bg-red-950/30 border-2 border-red-200 dark:border-red-800 p-6">
+            <p className="text-red-600 dark:text-red-400">{error}</p>
+          </div>
         )}
 
         {/* Empty State */}
         {!loading && !error && results.length === 0 && (
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Target className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                Nenhum resultado encontrado
-              </h3>
-              <p className="text-gray-500">
-                Seus resultados aparecerão aqui após realizar provas.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="text-center py-20">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-xl shadow-cyan-500/30">
+              <Target className="w-10 h-10 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              Nenhum resultado encontrado
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400">
+              Seus resultados aparecerão aqui após realizar provas.
+            </p>
+          </div>
         )}
 
-        {/* Dashboard com Resultados */}
+        {/* Dashboard with Results */}
         {!loading && !error && selectedResult && (
-          <div className="space-y-6">
-            {/* Seletor de Simulado - aparece quando tem mais de 1 prova */}
-            {results.length > 1 && (
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Analisando:</span>
-                <Select value={selectedExamId} onValueChange={setSelectedExamId}>
-                  <SelectTrigger className="w-[280px]">
-                    <SelectValue placeholder="Selecione um simulado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {results.map((result, index) => (
-                      <SelectItem key={result.exam_id} value={result.exam_id}>
-                        {result.exams?.title || 'Prova'} - {new Date(result.created_at).toLocaleDateString('pt-BR')}
-                        {index === 0 && ' (mais recente)'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+          <>
+            {/* ============================================================ */}
+            {/* STAT CARDS - XTRI Colors */}
+            {/* ============================================================ */}
+            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <StatCard
+                title="Nota TRI Geral"
+                value={selectedResult.tri_score?.toFixed(0) || '---'}
+                subtitle={classificarTRI(selectedResult.tri_score).label}
+                icon={Trophy}
+                gradient="from-[#33B5E5] to-[#1E9FCC]"
+                delay={0}
+              />
+              <StatCard
+                title="Acertos"
+                value={selectedResult.correct_answers ?? '---'}
+                subtitle={`de ${selectedResult.answers?.length || 180} questões`}
+                icon={CheckCircle2}
+                gradient="from-emerald-500 to-teal-600"
+                delay={100}
+              />
+              <StatCard
+                title="Simulados"
+                value={totalProvas}
+                subtitle="provas realizadas"
+                icon={FileBarChart}
+                gradient="from-indigo-500 to-violet-600"
+                delay={200}
+              />
+              <StatCard
+                title="Média Geral"
+                value={mediaTriGeral.toFixed(0)}
+                subtitle="nota TRI média"
+                icon={Activity}
+                gradient="from-[#F26A4B] to-[#E04E2D]"
+                delay={300}
+              />
+            </section>
 
-            {/* Card Principal - Prova Selecionada */}
-            <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-              <CardHeader>
-                <CardDescription className="text-blue-100">
-                  {results.length > 1 ? 'Resultado Selecionado' : 'Último Resultado'}
-                </CardDescription>
-                <CardTitle className="text-xl">
-                  {selectedResult.exams?.title || 'Prova'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-4xl font-bold">
-                      {selectedResult.tri_score?.toFixed(1) || '---'}
-                    </div>
-                    <div className="text-blue-100 text-sm">TRI Geral</div>
-                  </div>
-                  <div className="text-right">
-                    <Badge className="bg-white/20 text-white border-white/30">
-                      {classificarTRI(selectedResult.tri_score).emoji} {classificarTRI(selectedResult.tri_score).label}
-                    </Badge>
-                    <div className="text-blue-100 text-xs mt-2">
-                      {new Date(selectedResult.created_at).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric'
-                      })}
-                    </div>
-                  </div>
+            {/* ============================================================ */}
+            {/* PERFORMANCE BY AREA */}
+            {/* ============================================================ */}
+            <section className="space-y-6">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <BarChart3 className="w-6 h-6 text-[#33B5E5]" />
+                    Desempenho por Área
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Compare sua nota com a turma em cada área
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* ========== SEÇÃO: DESEMPENHO POR ÁREA - IGUAL AO ADMIN ========== */}
-            <div>
-              <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-blue-600" />
-                Desempenho por Área
                 {details && (
-                  <Badge variant="outline" className="ml-2">
-                    <Users className="h-3 w-3 mr-1" />
-                    {details.turmaSize} alunos na turma
+                  <Badge variant="outline" className="flex items-center gap-1.5 px-3 py-1.5 border-[#33B5E5] text-[#33B5E5]">
+                    <Users className="w-4 h-4" />
+                    {details.turmaSize} alunos
                   </Badge>
                 )}
-              </h2>
+              </div>
 
-              {details?.turmaStats ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <AreaTRICardAdmin
-                    area="LC"
-                    studentTRI={selectedResult.tri_lc}
-                    turmaMin={details.turmaStats.LC.min}
-                    turmaAvg={details.turmaStats.LC.avg}
-                    turmaMax={details.turmaStats.LC.max}
-                  />
-                  <AreaTRICardAdmin
-                    area="CH"
-                    studentTRI={selectedResult.tri_ch}
-                    turmaMin={details.turmaStats.CH.min}
-                    turmaAvg={details.turmaStats.CH.avg}
-                    turmaMax={details.turmaStats.CH.max}
-                  />
-                  <AreaTRICardAdmin
-                    area="CN"
-                    studentTRI={selectedResult.tri_cn}
-                    turmaMin={details.turmaStats.CN.min}
-                    turmaAvg={details.turmaStats.CN.avg}
-                    turmaMax={details.turmaStats.CN.max}
-                  />
-                  <AreaTRICardAdmin
-                    area="MT"
-                    studentTRI={selectedResult.tri_mt}
-                    turmaMin={details.turmaStats.MT.min}
-                    turmaAvg={details.turmaStats.MT.avg}
-                    turmaMax={details.turmaStats.MT.max}
-                  />
-                </div>
-              ) : detailsLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <LoadingCard />
-                  <LoadingCard />
-                  <LoadingCard />
-                  <LoadingCard />
-                </div>
-              ) : (
-                // Fallback sem dados da turma
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {(['LC', 'CH', 'CN', 'MT'] as const).map(area => {
-                    const config = AREA_CONFIG[area];
-                    const tri = area === 'LC' ? selectedResult.tri_lc
-                      : area === 'CH' ? selectedResult.tri_ch
-                      : area === 'CN' ? selectedResult.tri_cn
-                      : selectedResult.tri_mt;
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {detailsLoading ? (
+                  [...Array(4)].map((_, i) => <LoadingCard key={i} />)
+                ) : (
+                  <>
+                    <AreaCard area="LC" tri={selectedResult.tri_lc} turmaStats={details?.turmaStats?.LC} delay={0} />
+                    <AreaCard area="CH" tri={selectedResult.tri_ch} turmaStats={details?.turmaStats?.CH} delay={100} />
+                    <AreaCard area="CN" tri={selectedResult.tri_cn} turmaStats={details?.turmaStats?.CN} delay={200} />
+                    <AreaCard area="MT" tri={selectedResult.tri_mt} turmaStats={details?.turmaStats?.MT} delay={300} />
+                  </>
+                )}
+              </div>
+            </section>
 
-                    return (
-                      <Card key={area} className={`border-2 ${config.colors.border}`}>
-                        <CardContent className="p-6">
-                          <div className="space-y-4">
-                            <div>
-                              <h3 className="text-lg font-bold mb-1">{config.name}</h3>
-                              <p className={`text-4xl font-bold ${config.colors.text}`}>
-                                {tri?.toFixed(1) || '---'}
-                              </p>
-                              <p className="text-sm text-muted-foreground mt-1">TRI</p>
-                            </div>
-                            <div className="space-y-2">
-                              <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
-                                <div className={`absolute top-0 left-0 h-full ${config.colors.bar} opacity-30 w-full`}></div>
-                              </div>
-                            </div>
-                            <div className="pt-2 border-t border-border">
-                              <p className="text-xs text-muted-foreground">Carregando estatísticas...</p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* ========== SEÇÃO: DISPERSÃO ACERTOS VS TRI ========== */}
-            {details && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-blue-600" />
-                    Sua Posição: Acertos vs TRI
-                  </CardTitle>
-                  <CardDescription>Relação entre número de acertos e nota TRI</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        type="number"
-                        dataKey="acertos"
-                        name="Acertos"
-                        domain={[0, 'dataMax + 5']}
-                        label={{ value: 'Número de Acertos', position: 'bottom', offset: 0 }}
-                      />
-                      <YAxis
-                        type="number"
-                        dataKey="tri"
-                        name="TRI"
-                        domain={[0, 'dataMax + 50']}
-                        label={{ value: 'Nota TRI', angle: -90, position: 'insideLeft' }}
-                      />
-                      <ZAxis range={[100, 100]} />
-                      <Tooltip
-                        cursor={{ strokeDasharray: '3 3' }}
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload;
-                            return (
-                              <div className="bg-white border rounded-lg shadow-lg p-3">
-                                <p className={`font-bold ${data.isCurrentStudent ? 'text-blue-600' : 'text-gray-600'}`}>
-                                  {data.isCurrentStudent ? 'Você' : 'Colega'}
-                                </p>
-                                <p className="text-sm">Acertos: {data.acertos}</p>
-                                <p className="text-sm">TRI: {data.tri?.toFixed(1)}</p>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      {/* Pontos dos colegas (cinza) */}
-                      <Scatter
-                        name="Colegas"
-                        data={(details.turmaScatterData || []).filter((d: any) => !d.isCurrentStudent)}
-                        fill="#9ca3af"
-                      />
-                      {/* Seu ponto (azul, destacado) */}
-                      <Scatter
-                        name="Você"
-                        data={(details.turmaScatterData || []).filter((d: any) => d.isCurrentStudent)}
-                        fill="#3b82f6"
-                      />
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* ========== SEÇÃO: ANÁLISE POR DIFICULDADE ========== */}
+            {/* ============================================================ */}
+            {/* DIFFICULTY ANALYSIS */}
+            {/* ============================================================ */}
             {details?.difficultyStats && (
-              <div>
-                <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-purple-600" />
-                  Análise de Questões por Dificuldade
+              <section className="space-y-6">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Target className="w-6 h-6 text-[#F26A4B]" />
+                  Análise por Dificuldade
                 </h2>
 
-                {/* Cards de dificuldade */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <DifficultyCard difficulty="easy" stats={details.difficultyStats.easy} />
                   <DifficultyCard difficulty="medium" stats={details.difficultyStats.medium} />
                   <DifficultyCard difficulty="hard" stats={details.difficultyStats.hard} />
                 </div>
 
-                {/* Tabela de questões erradas */}
+                {/* Wrong Questions Table */}
                 {details.studentWrongQuestions.length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <Card className="border-2 border-gray-100 dark:border-gray-800 shadow-lg rounded-2xl overflow-hidden">
+                    <CardHeader className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
+                      <div className="flex items-center justify-between flex-wrap gap-4">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-amber-500" />
                           Questões para Revisar ({filteredWrongQuestions.length})
                         </CardTitle>
                         <div className="flex gap-2">
                           <Select value={selectedAreaFilter} onValueChange={setSelectedAreaFilter}>
-                            <SelectTrigger className="w-[130px] h-8 text-xs">
+                            <SelectTrigger className="w-[130px] h-9">
                               <SelectValue placeholder="Área" />
                             </SelectTrigger>
                             <SelectContent>
@@ -832,7 +809,7 @@ export default function StudentDashboard() {
                             </SelectContent>
                           </Select>
                           <Select value={selectedDifficultyFilter} onValueChange={setSelectedDifficultyFilter}>
-                            <SelectTrigger className="w-[130px] h-8 text-xs">
+                            <SelectTrigger className="w-[130px] h-9">
                               <SelectValue placeholder="Dificuldade" />
                             </SelectTrigger>
                             <SelectContent>
@@ -845,33 +822,31 @@ export default function StudentDashboard() {
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      <div className="max-h-[350px] overflow-auto">
+                    <CardContent className="p-0">
+                      <div className="max-h-[400px] overflow-auto">
                         <Table>
                           <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[60px]">Nº</TableHead>
-                              <TableHead>Conteúdo</TableHead>
-                              <TableHead className="w-[90px]">Área</TableHead>
-                              <TableHead className="w-[100px]">Dificuldade</TableHead>
-                              <TableHead className="w-[120px] text-center">Sua / Correta</TableHead>
+                            <TableRow className="bg-gray-50 dark:bg-gray-800/50">
+                              <TableHead className="w-[60px] font-semibold">Nº</TableHead>
+                              <TableHead className="font-semibold">Conteúdo</TableHead>
+                              <TableHead className="w-[90px] font-semibold">Área</TableHead>
+                              <TableHead className="w-[100px] font-semibold">Dificuldade</TableHead>
+                              <TableHead className="w-[120px] text-center font-semibold">Resposta</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {filteredWrongQuestions.slice(0, 20).map((q) => (
-                              <TableRow key={q.questionNumber}>
+                              <TableRow key={q.questionNumber} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                                 <TableCell className="font-medium">{q.questionNumber}</TableCell>
-                                <TableCell className="text-sm text-gray-600 max-w-[250px] truncate" title={q.content}>
+                                <TableCell className="text-sm text-gray-600 dark:text-gray-400 max-w-[250px] truncate" title={q.content}>
                                   {q.content || `Questão ${q.questionNumber}`}
                                 </TableCell>
                                 <TableCell>
-                                  <Badge variant="outline" className="text-xs">
-                                    {q.area}
-                                  </Badge>
+                                  <Badge variant="outline" className="text-xs">{q.area}</Badge>
                                 </TableCell>
                                 <TableCell>
                                   <span className="text-xs">
-                                    {q.difficulty === 'easy' ? '🟢 Fácil' : q.difficulty === 'medium' ? '🟡 Média' : '🔴 Difícil'}
+                                    {q.difficulty === 'easy' ? '🟢' : q.difficulty === 'medium' ? '🟡' : '🔴'}
                                   </span>
                                   <span className="text-xs text-gray-400 ml-1">({q.correctRate.toFixed(0)}%)</span>
                                 </TableCell>
@@ -884,146 +859,77 @@ export default function StudentDashboard() {
                             ))}
                           </TableBody>
                         </Table>
-                        {filteredWrongQuestions.length > 20 && (
-                          <p className="text-xs text-gray-400 text-center mt-2">
-                            Mostrando 20 de {filteredWrongQuestions.length} questões
-                          </p>
-                        )}
                       </div>
                     </CardContent>
                   </Card>
                 )}
-              </div>
+              </section>
             )}
 
-            {/* ========== SEÇÃO: CONTEÚDOS PRIORITÁRIOS ========== */}
-            {details?.topErrorContents && details.topErrorContents.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Target className="h-5 w-5 text-red-600" />
-                    Conteúdos Prioritários para Estudo
-                  </CardTitle>
-                  <CardDescription>Foque nos conteúdos com maior taxa de erro</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={Math.min(350, details.topErrorContents.length * 40 + 50)}>
-                    <BarChart
-                      data={details.topErrorContents.slice(0, 10).map(c => ({
-                        name: c.content.length > 35 ? c.content.slice(0, 35) + '...' : c.content,
-                        fullName: c.content,
-                        erros: c.errors,
-                        total: c.total,
-                        percentage: c.total > 0 ? Math.round((c.errors / c.total) * 100) : 0,
-                        area: c.area,
-                      }))}
-                      layout="vertical"
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                      <YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 11 }} />
-                      <Tooltip
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload;
-                            return (
-                              <div className="bg-white border rounded-lg shadow-lg p-3 text-sm">
-                                <p className="font-medium">{data.fullName}</p>
-                                <p className="text-gray-500">Área: {data.area}</p>
-                                <p className="text-red-600 font-bold">Erros: {data.erros}/{data.total} ({data.percentage}%)</p>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
-                        {details.topErrorContents.slice(0, 10).map((entry, index) => {
-                          const areaColors: Record<string, string> = {
-                            LC: '#8b5cf6',
-                            CH: '#f97316',
-                            CN: '#22c55e',
-                            MT: '#3b82f6',
-                          };
-                          return <Cell key={`cell-${index}`} fill={areaColors[entry.area] || '#ef4444'} />;
-                        })}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            )}
+            {/* ============================================================ */}
+            {/* STUDY PLAN */}
+            {/* ============================================================ */}
+            {studyPlan?.studyPlan && studyPlan.studyPlan.length > 0 && (
+              <section className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <GraduationCap className="w-6 h-6 text-[#33B5E5]" />
+                    Plano de Estudos Personalizado
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Baseado no seu desempenho TRI, preparamos conteúdos prioritários
+                  </p>
+                </div>
 
-            {/* ========== SEÇÃO: PLANO DE ESTUDOS PERSONALIZADO ========== */}
-            {(studyPlan?.studyPlan && studyPlan.studyPlan.length > 0) && (
-              <div>
-                <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <GraduationCap className="h-5 w-5 text-indigo-600" />
-                  Plano de Estudos Personalizado
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Baseado no seu desempenho TRI, preparamos conteúdos prioritários para você evoluir em cada área.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {studyPlan.studyPlan.map((plan) => {
                     const areaConfig = AREA_CONFIG[plan.area as keyof typeof AREA_CONFIG];
                     if (!areaConfig) return null;
 
                     return (
-                      <Card key={plan.area} className={`border-2 ${areaConfig.colors.border}`}>
-                        <CardHeader className="pb-2">
+                      <Card key={plan.area} className={`border-2 ${areaConfig.border} rounded-2xl overflow-hidden`}>
+                        <div className={`h-1.5 bg-gradient-to-r ${areaConfig.gradient}`} />
+                        <CardHeader className="pb-3">
                           <div className="flex items-center justify-between">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <span className={areaConfig.colors.text}>{areaConfig.name}</span>
+                            <CardTitle className="flex items-center gap-2">
+                              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${areaConfig.gradient} flex items-center justify-center`}>
+                                <span className="text-white text-xs font-bold">{areaConfig.shortName}</span>
+                              </div>
+                              <span className={areaConfig.text}>{areaConfig.name}</span>
                             </CardTitle>
-                            <Badge variant="outline" className="text-xs">
-                              TRI: {plan.tri_atual?.toFixed(0) || '---'}
-                            </Badge>
+                            <Badge variant="outline">TRI: {plan.tri_atual?.toFixed(0) || '---'}</Badge>
                           </div>
                           {plan.meta_proxima_faixa && plan.meta_proxima_faixa.pontos_necessarios > 0 && (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                              <Lightbulb className="h-3 w-3 text-amber-500" />
-                              <span>
-                                Meta: +{Math.round(plan.meta_proxima_faixa.pontos_necessarios)} pontos para {plan.meta_proxima_faixa.proxima_faixa}
-                              </span>
+                            <div className="flex items-center gap-1.5 text-xs text-amber-600 mt-2">
+                              <Lightbulb className="w-4 h-4" />
+                              <span>Meta: +{Math.round(plan.meta_proxima_faixa.pontos_necessarios)} pts para {plan.meta_proxima_faixa.proxima_faixa}</span>
                             </div>
                           )}
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
                           {plan.conteudos_prioritarios && plan.conteudos_prioritarios.length > 0 ? (
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium text-muted-foreground mb-2">
-                                Conteúdos para focar:
-                              </p>
-                              <ul className="space-y-1">
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 mb-2">Conteúdos para focar:</p>
+                              <ul className="space-y-1.5">
                                 {plan.conteudos_prioritarios.slice(0, 5).map((conteudo, idx) => (
-                                  <li key={idx} className="flex items-start gap-2 text-sm">
-                                    <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                                    <span className="text-gray-700 dark:text-gray-300">
-                                      {conteudo.conteudo}
-                                    </span>
+                                  <li key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                    <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                                    {conteudo.conteudo}
                                   </li>
                                 ))}
                               </ul>
-                              {plan.conteudos_prioritarios.length > 5 && (
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  +{plan.conteudos_prioritarios.length - 5} outros conteúdos
-                                </p>
-                              )}
                             </div>
                           ) : (
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-gray-500">
                               Parabéns! Você está em um ótimo nível nesta área.
                             </p>
                           )}
 
-                          {/* Listas de Exercícios Disponíveis */}
+                          {/* Available Lists */}
                           {plan.listas_recomendadas && plan.listas_recomendadas.length > 0 && (
-                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                                <Unlock className="h-3 w-3 text-green-500" />
+                            <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                              <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                                <Unlock className="w-3 h-3 text-green-500" />
                                 Listas Disponíveis ({plan.listas_recomendadas.length}):
                               </p>
                               <div className="flex flex-wrap gap-2">
@@ -1034,19 +940,16 @@ export default function StudentDashboard() {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={() => {
-                                      // Registrar download em background (não bloqueia o clique)
                                       authFetch('/api/list-downloads', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ listId: lista.id }),
-                                      }).catch(() => {}); // Ignora erros silenciosamente
+                                      }).catch(() => {});
                                     }}
-                                    className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
-                                      ${areaConfig.colors.border} ${areaConfig.colors.text}
-                                      hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors`}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border ${areaConfig.border} ${areaConfig.text} hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors`}
                                     title={lista.tri_min && lista.tri_max ? `Faixa TRI: ${Math.round(lista.tri_min)}-${Math.round(lista.tri_max)}` : ''}
                                   >
-                                    <Download className="h-3 w-3" />
+                                    <Download className="w-3 h-3" />
                                     {lista.titulo.replace(/Lista \d+ - /, '').replace(/\(\d+-\d+\)/, '').trim() || `Lista ${lista.ordem}`}
                                   </a>
                                 ))}
@@ -1054,29 +957,26 @@ export default function StudentDashboard() {
                             </div>
                           )}
 
-                          {/* Próximas Listas (Bloqueadas) */}
+                          {/* Locked Lists */}
                           {plan.listas_proximas && plan.listas_proximas.length > 0 && (
-                            <div className="mt-3">
-                              <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                                <Lock className="h-3 w-3 text-gray-400" />
+                            <div>
+                              <p className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1">
+                                <Lock className="w-3 h-3" />
                                 Próximas Listas:
                               </p>
-                              <p className="text-[10px] text-muted-foreground mb-2">
-                                Suba sua nota TRI para desbloquear mais listas de exercícios
+                              <p className="text-[10px] text-gray-400 mb-2">
+                                Suba sua nota TRI para desbloquear mais listas
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {plan.listas_proximas.map((lista) => (
                                   <div
                                     key={lista.id}
-                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
-                                      border-gray-300 text-gray-400 bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
-                                    title={`Desbloqueie subindo +${Math.round(lista.pontos_para_desbloquear)} pontos de TRI`}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
+                                    title={`+${Math.round(lista.pontos_para_desbloquear)} pts TRI`}
                                   >
-                                    <Lock className="h-3 w-3" />
+                                    <Lock className="w-3 h-3" />
                                     <span>TRI {Math.round(lista.tri_min)}+</span>
-                                    <span className="text-[10px] ml-1 opacity-70">
-                                      (+{Math.round(lista.pontos_para_desbloquear)} pts)
-                                    </span>
+                                    <span className="text-[10px] opacity-70">(+{Math.round(lista.pontos_para_desbloquear)})</span>
                                   </div>
                                 ))}
                               </div>
@@ -1087,14 +987,14 @@ export default function StudentDashboard() {
                     );
                   })}
                 </div>
-              </div>
+              </section>
             )}
 
             {studyPlanLoading && (
-              <Card>
+              <Card className="rounded-2xl">
                 <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <GraduationCap className="h-5 w-5 text-indigo-600" />
+                  <CardTitle className="flex items-center gap-2">
+                    <GraduationCap className="w-5 h-5 text-[#33B5E5]" />
                     Plano de Estudos Personalizado
                   </CardTitle>
                 </CardHeader>
@@ -1108,402 +1008,384 @@ export default function StudentDashboard() {
               </Card>
             )}
 
-            {/* ========== SEÇÃO: GRÁFICO DE EVOLUÇÃO ========== */}
-            {results.length >= 2 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-blue-600" />
-                    Evolução do TRI
-                  </CardTitle>
-                  {/* Seletores de linhas */}
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    <button
-                      onClick={() => toggleLine('geral')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        visibleLines.geral
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                      }`}
-                    >
-                      Média Geral
-                    </button>
-                    <button
-                      onClick={() => toggleLine('LC')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        visibleLines.LC
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-purple-100 text-purple-500 hover:bg-purple-200'
-                      }`}
-                    >
-                      Linguagens
-                    </button>
-                    <button
-                      onClick={() => toggleLine('CH')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        visibleLines.CH
-                          ? 'bg-orange-500 text-white'
-                          : 'bg-orange-100 text-orange-500 hover:bg-orange-200'
-                      }`}
-                    >
-                      Humanas
-                    </button>
-                    <button
-                      onClick={() => toggleLine('CN')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        visibleLines.CN
-                          ? 'bg-green-600 text-white'
-                          : 'bg-green-100 text-green-500 hover:bg-green-200'
-                      }`}
-                    >
-                      Natureza
-                    </button>
-                    <button
-                      onClick={() => toggleLine('MT')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        visibleLines.MT
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-100 text-blue-500 hover:bg-blue-200'
-                      }`}
-                    >
-                      Matemática
-                    </button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={350}>
-                    <LineChart
-                      data={[...results]
-                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                        .map((result) => ({
-                          date: new Date(result.created_at).toLocaleDateString('pt-BR', {
-                            day: '2-digit',
-                            month: '2-digit'
-                          }),
-                          fullDate: new Date(result.created_at).toLocaleDateString('pt-BR', {
-                            day: '2-digit',
-                            month: 'long',
-                            year: 'numeric'
-                          }),
-                          prova: result.exams?.title || 'Prova',
-                          LC: result.tri_lc,
-                          CH: result.tri_ch,
-                          CN: result.tri_cn,
-                          MT: result.tri_mt,
-                          geral: result.tri_score,
-                        }))
-                      }
-                      margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 12 }} />
-                      <YAxis domain={[350, 700]} tick={{ fill: '#6b7280', fontSize: 12 }} />
-                      <Tooltip
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload;
-                            return (
-                              <div className="bg-white border rounded-lg shadow-lg p-3">
-                                <p className="font-semibold">{data.prova}</p>
-                                <p className="text-sm text-gray-500 mb-2">{data.fullDate}</p>
-                                <div className="space-y-1 text-sm">
-                                  {visibleLines.geral && <p className="text-gray-800 font-semibold">Média: {data.geral?.toFixed(0) || '---'}</p>}
-                                  {visibleLines.LC && <p className="text-purple-600">LC: {data.LC?.toFixed(0) || '---'}</p>}
-                                  {visibleLines.CH && <p className="text-orange-600">CH: {data.CH?.toFixed(0) || '---'}</p>}
-                                  {visibleLines.CN && <p className="text-green-600">CN: {data.CN?.toFixed(0) || '---'}</p>}
-                                  {visibleLines.MT && <p className="text-blue-600">MT: {data.MT?.toFixed(0) || '---'}</p>}
+            {/* ============================================================ */}
+            {/* EVOLUTION CHART */}
+            {/* ============================================================ */}
+            <section className="space-y-6">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-[#33B5E5]" />
+                Evolução do TRI
+              </h2>
+
+              {results.length >= 2 ? (
+                <Card className="border-2 border-gray-100 dark:border-gray-800 shadow-lg rounded-2xl overflow-hidden">
+                  <CardHeader className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => toggleLine('geral')}
+                        className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
+                          visibleLines.geral
+                            ? 'bg-gray-800 text-white shadow-md'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}
+                      >
+                        Média Geral
+                      </button>
+                      {(['LC', 'CH', 'CN', 'MT'] as const).map((area) => {
+                        const config = AREA_CONFIG[area];
+                        return (
+                          <button
+                            key={area}
+                            onClick={() => toggleLine(area)}
+                            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
+                              visibleLines[area]
+                                ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
+                                : `${config.bgLight} ${config.text}`
+                            }`}
+                          >
+                            {config.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <ResponsiveContainer width="100%" height={350}>
+                      <AreaChart
+                        data={[...results]
+                          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                          .map((result) => ({
+                            date: new Date(result.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+                            fullDate: new Date(result.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
+                            prova: result.exams?.title || 'Prova',
+                            LC: result.tri_lc,
+                            CH: result.tri_ch,
+                            CN: result.tri_cn,
+                            MT: result.tri_mt,
+                            geral: result.tri_score,
+                          }))
+                        }
+                        margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorGeral" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#1f2937" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#1f2937" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="colorLC" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#33B5E5" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#33B5E5" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="colorCH" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#F26A4B" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#F26A4B" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="colorCN" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="colorMT" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 12 }} />
+                        <YAxis domain={[350, 800]} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                        <Tooltip
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white dark:bg-gray-800 border rounded-xl shadow-xl p-4">
+                                  <p className="font-semibold text-gray-900 dark:text-white">{data.prova}</p>
+                                  <p className="text-sm text-gray-500 mb-2">{data.fullDate}</p>
+                                  <div className="space-y-1 text-sm">
+                                    {visibleLines.geral && <p className="text-gray-800 dark:text-gray-200 font-semibold">Média: {data.geral?.toFixed(0) || '---'}</p>}
+                                    {visibleLines.LC && <p style={{ color: '#33B5E5' }}>LC: {data.LC?.toFixed(0) || '---'}</p>}
+                                    {visibleLines.CH && <p style={{ color: '#F26A4B' }}>CH: {data.CH?.toFixed(0) || '---'}</p>}
+                                    {visibleLines.CN && <p className="text-emerald-600">CN: {data.CN?.toFixed(0) || '---'}</p>}
+                                    {visibleLines.MT && <p className="text-indigo-600">MT: {data.MT?.toFixed(0) || '---'}</p>}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <ReferenceLine y={550} stroke="#f59e0b" strokeDasharray="5 5" />
-                      {visibleLines.geral && <Line type="monotone" dataKey="geral" name="Média Geral" stroke="#1f2937" strokeWidth={3} dot={{ r: 5 }} connectNulls />}
-                      {visibleLines.LC && <Line type="monotone" dataKey="LC" name="Linguagens" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
-                      {visibleLines.CH && <Line type="monotone" dataKey="CH" name="Humanas" stroke="#f97316" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
-                      {visibleLines.CN && <Line type="monotone" dataKey="CN" name="Natureza" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
-                      {visibleLines.MT && <Line type="monotone" dataKey="MT" name="Matemática" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            ) : results.length === 1 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-blue-600" />
-                    Evolução do TRI
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8">
-                    <TrendingUp className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <ReferenceLine y={550} stroke="#f59e0b" strokeDasharray="5 5" label={{ value: 'Média Nacional', fill: '#f59e0b', fontSize: 10 }} />
+                        {visibleLines.geral && (
+                          <Area type="monotone" dataKey="geral" stroke="#1f2937" fill="url(#colorGeral)" strokeWidth={3} dot={{ r: 5, fill: '#1f2937' }} />
+                        )}
+                        {visibleLines.LC && <Area type="monotone" dataKey="LC" stroke="#33B5E5" fill="url(#colorLC)" strokeWidth={2} dot={{ r: 4, fill: '#33B5E5' }} />}
+                        {visibleLines.CH && <Area type="monotone" dataKey="CH" stroke="#F26A4B" fill="url(#colorCH)" strokeWidth={2} dot={{ r: 4, fill: '#F26A4B' }} />}
+                        {visibleLines.CN && <Area type="monotone" dataKey="CN" stroke="#10b981" fill="url(#colorCN)" strokeWidth={2} dot={{ r: 4, fill: '#10b981' }} />}
+                        {visibleLines.MT && <Area type="monotone" dataKey="MT" stroke="#6366f1" fill="url(#colorMT)" strokeWidth={2} dot={{ r: 4, fill: '#6366f1' }} />}
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-2 border-gray-100 dark:border-gray-800 shadow-lg rounded-2xl">
+                  <CardContent className="py-16 text-center">
+                    <TrendingUp className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
                       Continue fazendo provas!
                     </h3>
                     <p className="text-gray-500">
                       O gráfico de evolução aparecerá quando você tiver 2 ou mais provas.
                     </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
+                  </CardContent>
+                </Card>
+              )}
+            </section>
 
-            {/* ========== SEÇÃO: RESUMO DE ACERTOS ========== */}
-            <div>
-              <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
+            {/* ============================================================ */}
+            {/* SUMMARY CARDS */}
+            {/* ============================================================ */}
+            <section className="space-y-6">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
                 Resumo de Acertos
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="border-green-200 bg-green-50">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-full bg-green-100">
-                        <CheckCircle2 className="h-6 w-6 text-green-600" />
-                      </div>
-                      <div>
-                        <div className="text-3xl font-bold text-green-700">
-                          {selectedResult.correct_answers ?? '---'}
-                        </div>
-                        <div className="text-sm text-gray-600">Acertos</div>
-                      </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="rounded-2xl p-6 bg-emerald-50 dark:bg-emerald-950/30 border-2 border-emerald-200 dark:border-emerald-800">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-900/50">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-600" />
                     </div>
-                    {selectedResult.correct_answers !== null && selectedResult.answers && (
-                      <Progress
-                        value={(selectedResult.correct_answers / selectedResult.answers.length) * 100}
-                        className="h-2 mt-3"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-red-200 bg-red-50">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-full bg-red-100">
-                        <XCircle className="h-6 w-6 text-red-600" />
-                      </div>
-                      <div>
-                        <div className="text-3xl font-bold text-red-700">
-                          {selectedResult.wrong_answers ?? '---'}
-                        </div>
-                        <div className="text-sm text-gray-600">Erros</div>
-                      </div>
+                    <div>
+                      <p className="text-3xl font-bold text-emerald-700 dark:text-emerald-400">
+                        {selectedResult.correct_answers ?? '---'}
+                      </p>
+                      <p className="text-sm text-emerald-600/70">Acertos</p>
                     </div>
-                    {selectedResult.wrong_answers !== null && selectedResult.answers && (
-                      <Progress
-                        value={(selectedResult.wrong_answers / selectedResult.answers.length) * 100}
-                        className="h-2 mt-3 [&>div]:bg-red-500"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-gray-200 bg-gray-50">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-full bg-gray-100">
-                        <MinusCircle className="h-6 w-6 text-gray-600" />
-                      </div>
-                      <div>
-                        <div className="text-3xl font-bold text-gray-700">
-                          {selectedResult.blank_answers ?? '---'}
-                        </div>
-                        <div className="text-sm text-gray-600">Em Branco</div>
-                      </div>
-                    </div>
-                    {selectedResult.blank_answers !== null && selectedResult.answers && (
-                      <Progress
-                        value={(selectedResult.blank_answers / selectedResult.answers.length) * 100}
-                        className="h-2 mt-3 [&>div]:bg-gray-400"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            {/* ========== SEÇÃO: HISTÓRICO DE PROVAS ========== */}
-            <div ref={historyRef}>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <History className="h-5 w-5 text-purple-600" />
-                  Histórico de Provas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {results.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Calendar className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                    <p className="text-gray-500">Seu histórico aparecerá aqui.</p>
                   </div>
-                ) : (
+                  {selectedResult.correct_answers !== null && selectedResult.answers && (
+                    <div className="mt-4">
+                      <div className="h-2 bg-emerald-200/50 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
+                          style={{ width: `${(selectedResult.correct_answers / selectedResult.answers.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl p-6 bg-red-50 dark:bg-red-950/30 border-2 border-red-200 dark:border-red-800">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-red-100 dark:bg-red-900/50">
+                      <XCircle className="w-7 h-7 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-red-700 dark:text-red-400">
+                        {selectedResult.wrong_answers ?? '---'}
+                      </p>
+                      <p className="text-sm text-red-600/70">Erros</p>
+                    </div>
+                  </div>
+                  {selectedResult.wrong_answers !== null && selectedResult.answers && (
+                    <div className="mt-4">
+                      <div className="h-2 bg-red-200/50 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-red-500 to-rose-500 rounded-full"
+                          style={{ width: `${(selectedResult.wrong_answers / selectedResult.answers.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl p-6 bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700">
+                      <MinusCircle className="w-7 h-7 text-gray-500" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-gray-700 dark:text-gray-300">
+                        {selectedResult.blank_answers ?? '---'}
+                      </p>
+                      <p className="text-sm text-gray-500">Em Branco</p>
+                    </div>
+                  </div>
+                  {selectedResult.blank_answers !== null && selectedResult.answers && (
+                    <div className="mt-4">
+                      <div className="h-2 bg-gray-200/50 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gray-400 rounded-full"
+                          style={{ width: `${(selectedResult.blank_answers / selectedResult.answers.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* ============================================================ */}
+            {/* HISTORY TABLE */}
+            {/* ============================================================ */}
+            <section ref={historyRef} className="space-y-6">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <History className="w-6 h-6 text-[#F26A4B]" />
+                Histórico de Provas
+              </h2>
+
+              <Card className="border-2 border-gray-100 dark:border-gray-800 shadow-lg rounded-2xl overflow-hidden">
+                <CardContent className="p-0">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Data</TableHead>
-                        <TableHead>Prova</TableHead>
-                        <TableHead className="text-center">Acertos</TableHead>
-                        <TableHead className="text-center">TRI</TableHead>
-                        <TableHead className="text-center">Evolução</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
+                      <TableRow className="bg-gradient-to-r from-cyan-50 to-orange-50/50 dark:from-cyan-950/30 dark:to-orange-950/30">
+                        <TableHead className="font-semibold">Data</TableHead>
+                        <TableHead className="font-semibold">Prova</TableHead>
+                        <TableHead className="text-center font-semibold">Acertos</TableHead>
+                        <TableHead className="text-center font-semibold">TRI</TableHead>
+                        <TableHead className="text-center font-semibold">Evolução</TableHead>
+                        <TableHead className="text-right font-semibold">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {results.map((result, index) => (
-                        <TableRow key={result.id}>
-                          <TableCell className="font-medium">
-                            {new Date(result.created_at).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric'
-                            })}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{result.exams?.title || 'Prova'}</span>
-                              <span className="text-xs text-gray-500">{result.exams?.template_type || 'N/A'}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <span className="font-medium text-green-600">{result.correct_answers ?? '-'}</span>
-                            <span className="text-gray-400">/{result.answers?.length || '-'}</span>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge className={`${classificarTRI(result.tri_score).color}`}>
-                              {result.tri_score?.toFixed(0) || '---'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <EvolutionIndicator current={result.tri_score} previous={getPreviousTRI(index)} />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="sm" onClick={() => handleViewDetails(result)}>
-                              <Eye className="h-4 w-4 mr-1" />
-                              Ver
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {results.map((result, index) => {
+                        const prevTRI = getPreviousTRI(index);
+                        const diff = result.tri_score && prevTRI ? result.tri_score - prevTRI : null;
+
+                        return (
+                          <TableRow key={result.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <TableCell className="font-medium">
+                              {new Date(result.created_at).toLocaleDateString('pt-BR', {
+                                day: '2-digit', month: '2-digit', year: 'numeric'
+                              })}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{result.exams?.title || 'Prova'}</p>
+                                <p className="text-xs text-gray-500">{result.exams?.template_type || 'ENEM'}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="font-medium text-emerald-600">{result.correct_answers ?? '-'}</span>
+                              <span className="text-gray-400">/{result.answers?.length || '-'}</span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge className={`${classificarTRI(result.tri_score).bgColor} ${classificarTRI(result.tri_score).color} border-0`}>
+                                {result.tri_score?.toFixed(0) || '---'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {diff !== null ? (
+                                <div className={`flex items-center justify-center gap-1 ${diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                  {diff > 0 ? <TrendingUp className="w-4 h-4" /> : diff < 0 ? <TrendingDown className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
+                                  <span className="text-xs font-medium">{diff > 0 ? '+' : ''}{diff.toFixed(0)}</span>
+                                </div>
+                              ) : (
+                                <Minus className="w-4 h-4 text-gray-400 mx-auto" />
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setDialogResult(result);
+                                  setDialogOpen(true);
+                                }}
+                                className="hover:bg-cyan-50 hover:text-[#33B5E5]"
+                              >
+                                <Eye className="w-4 h-4 mr-1" />
+                                Ver
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
-                )}
-              </CardContent>
-            </Card>
-            </div>
-
-            {/* Resumo Geral */}
-            {totalProvas > 1 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Resumo Geral</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-6">
-                    <div>
-                      <div className="text-2xl font-bold text-blue-600">{totalProvas}</div>
-                      <div className="text-sm text-gray-500">Provas realizadas</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-green-600">{mediaTriGeral.toFixed(1)}</div>
-                      <div className="text-sm text-gray-500">Média TRI Geral</div>
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
-            )}
-          </div>
+            </section>
+          </>
         )}
+      </main>
 
-        {/* Dialog de Detalhes da Prova */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-md p-0 overflow-hidden">
-            {dialogResult && (
-              <>
-                {/* Header com gradiente */}
-                <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-6 text-white">
-                  <DialogHeader>
-                    <DialogTitle className="text-white text-xl">{dialogResult.exams?.title || 'Análise da Prova'}</DialogTitle>
-                    <DialogDescription className="text-white/80">
-                      {new Date(dialogResult.created_at).toLocaleDateString('pt-BR', {
-                        weekday: 'long',
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric'
-                      })}
-                    </DialogDescription>
-                  </DialogHeader>
+      {/* ============================================================ */}
+      {/* DETAIL DIALOG */}
+      {/* ============================================================ */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden rounded-2xl">
+          {dialogResult && (
+            <>
+              {/* Header with XTRI gradient */}
+              <div className="bg-gradient-to-br from-[#33B5E5] via-[#1E9FCC] to-[#F26A4B] p-6 text-white">
+                <DialogHeader>
+                  <DialogTitle className="text-white text-xl">{dialogResult.exams?.title || 'Análise da Prova'}</DialogTitle>
+                  <DialogDescription className="text-white/80">
+                    {new Date(dialogResult.created_at).toLocaleDateString('pt-BR', {
+                      weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+                    })}
+                  </DialogDescription>
+                </DialogHeader>
 
-                  {/* Nota TRI principal */}
-                  <div className="mt-4 flex items-center justify-between">
-                    <div>
-                      <div className="text-white/70 text-sm">Sua nota TRI</div>
-                      <div className="text-5xl font-black">{dialogResult.tri_score?.toFixed(0) || '---'}</div>
-                    </div>
-                    <div className={`px-4 py-2 rounded-full text-sm font-bold ${
-                      classificarTRI(dialogResult.tri_score).label === 'Excelente' ? 'bg-green-400/90 text-green-900' :
-                      classificarTRI(dialogResult.tri_score).label === 'Bom' ? 'bg-blue-400/90 text-blue-900' :
-                      classificarTRI(dialogResult.tri_score).label === 'Regular' ? 'bg-yellow-400/90 text-yellow-900' :
-                      'bg-red-400/90 text-red-900'
-                    }`}>
-                      {classificarTRI(dialogResult.tri_score).emoji} {classificarTRI(dialogResult.tri_score).label}
-                    </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-white/70 text-sm">Sua nota TRI</div>
+                    <div className="text-5xl font-black">{dialogResult.tri_score?.toFixed(0) || '---'}</div>
+                  </div>
+                  <div className={`px-4 py-2 rounded-full text-sm font-bold ${
+                    classificarTRI(dialogResult.tri_score).label === 'Excelente' ? 'bg-blue-400/90 text-blue-900' :
+                    classificarTRI(dialogResult.tri_score).label === 'Acima da média' ? 'bg-green-400/90 text-green-900' :
+                    classificarTRI(dialogResult.tri_score).label === 'Na média' ? 'bg-yellow-400/90 text-yellow-900' :
+                    'bg-red-400/90 text-red-900'
+                  }`}>
+                    {classificarTRI(dialogResult.tri_score).emoji} {classificarTRI(dialogResult.tri_score).label}
+                  </div>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-2 gap-3">
+                  {(['LC', 'CH', 'CN', 'MT'] as const).map((area) => {
+                    const config = AREA_CONFIG[area];
+                    const tri = area === 'LC' ? dialogResult.tri_lc
+                      : area === 'CH' ? dialogResult.tri_ch
+                      : area === 'CN' ? dialogResult.tri_cn
+                      : dialogResult.tri_mt;
+
+                    return (
+                      <div key={area} className={`p-4 rounded-xl ${config.bgLight} border ${config.border}`}>
+                        <div className={`text-xs font-medium ${config.text} uppercase tracking-wide`}>{config.name}</div>
+                        <div className={`text-2xl font-bold ${config.text} mt-1`}>{tri?.toFixed(0) || '---'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-3">
+                  <div className="flex-1 text-center p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                    <div className="text-3xl font-black text-emerald-600">{dialogResult.correct_answers ?? '-'}</div>
+                    <div className="text-xs text-emerald-600 font-medium mt-1">Acertos</div>
+                  </div>
+                  <div className="flex-1 text-center p-4 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-800">
+                    <div className="text-3xl font-black text-red-600">{dialogResult.wrong_answers ?? '-'}</div>
+                    <div className="text-xs text-red-600 font-medium mt-1">Erros</div>
+                  </div>
+                  <div className="flex-1 text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <div className="text-3xl font-black text-gray-500">{dialogResult.blank_answers ?? '-'}</div>
+                    <div className="text-xs text-gray-500 font-medium mt-1">Em Branco</div>
                   </div>
                 </div>
 
-                {/* Conteúdo */}
-                <div className="p-6 space-y-5">
-                  {/* Grid das 4 áreas */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
-                      <div className="text-xs font-medium text-purple-600 uppercase tracking-wide">Linguagens</div>
-                      <div className="text-2xl font-bold text-purple-700 mt-1">{dialogResult.tri_lc?.toFixed(0) || '---'}</div>
-                    </div>
-                    <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
-                      <div className="text-xs font-medium text-orange-600 uppercase tracking-wide">Humanas</div>
-                      <div className="text-2xl font-bold text-orange-700 mt-1">{dialogResult.tri_ch?.toFixed(0) || '---'}</div>
-                    </div>
-                    <div className="p-4 rounded-xl bg-green-50 border border-green-100">
-                      <div className="text-xs font-medium text-green-600 uppercase tracking-wide">Natureza</div>
-                      <div className="text-2xl font-bold text-green-700 mt-1">{dialogResult.tri_cn?.toFixed(0) || '---'}</div>
-                    </div>
-                    <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
-                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Matemática</div>
-                      <div className="text-2xl font-bold text-blue-700 mt-1">{dialogResult.tri_mt?.toFixed(0) || '---'}</div>
-                    </div>
-                  </div>
-
-                  {/* Estatísticas de respostas */}
-                  <div className="flex gap-3">
-                    <div className="flex-1 text-center p-4 bg-green-50 rounded-xl border border-green-100">
-                      <div className="text-3xl font-black text-green-600">{dialogResult.correct_answers ?? '-'}</div>
-                      <div className="text-xs text-green-600 font-medium mt-1">Acertos</div>
-                    </div>
-                    <div className="flex-1 text-center p-4 bg-red-50 rounded-xl border border-red-100">
-                      <div className="text-3xl font-black text-red-600">{dialogResult.wrong_answers ?? '-'}</div>
-                      <div className="text-xs text-red-600 font-medium mt-1">Erros</div>
-                    </div>
-                    <div className="flex-1 text-center p-4 bg-gray-50 rounded-xl border border-gray-200">
-                      <div className="text-3xl font-black text-gray-500">{dialogResult.blank_answers ?? '-'}</div>
-                      <div className="text-xs text-gray-500 font-medium mt-1">Em Branco</div>
-                    </div>
-                  </div>
-
-                  {/* Info adicional */}
-                  <div className="flex items-center justify-between text-sm text-gray-500 pt-2 border-t">
-                    <span>{dialogResult.answers?.length || 180} questões</span>
-                    <span>{dialogResult.exams?.template_type || 'ENEM'}</span>
-                    {dialogResult.turma && <span>Turma {dialogResult.turma}</span>}
-                  </div>
+                <div className="flex items-center justify-between text-sm text-gray-500 pt-2 border-t">
+                  <span>{dialogResult.answers?.length || 180} questões</span>
+                  <span>{dialogResult.exams?.template_type || 'ENEM'}</span>
+                  {dialogResult.turma && <span>Turma {dialogResult.turma}</span>}
                 </div>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
-    </DashboardLayout>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

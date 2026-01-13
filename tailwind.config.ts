@@ -81,7 +81,17 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
-        // Cores do outro site
+        // XTRI Brand Colors
+        xtri: {
+          cyan: "#33B5E5",
+          "cyan-light": "#5AC8ED",
+          "cyan-dark": "#1E9FCC",
+          orange: "#F26A4B",
+          "orange-light": "#F58A70",
+          "orange-dark": "#E04E2D",
+          dark: "#1a2744",
+        },
+        // Cores de apoio
         purple: {
           light: "#a855f7",
           DEFAULT: "#8b5cf6",
