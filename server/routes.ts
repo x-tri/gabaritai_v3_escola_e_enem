@@ -7757,6 +7757,10 @@ Para cada disciplina:
         return res.status(400).json({ error: "Email, nome, senha e escola são obrigatórios" });
       }
 
+      if (password.length < 8) {
+        return res.status(400).json({ error: "Senha deve ter pelo menos 8 caracteres" });
+      }
+
       // Validate school exists
       const { data: school, error: schoolError } = await supabaseAdmin
         .from("schools")
@@ -7854,8 +7858,12 @@ Para cada disciplina:
         return res.status(404).json({ error: "Coordenador não encontrado" });
       }
 
-      if (name) {
-        await supabaseAdmin.auth.admin.updateUserById(id, { user_metadata: { name } });
+      // Update auth user metadata if name or school_id changed
+      if (name || school_id) {
+        const metadataUpdates: Record<string, string> = {};
+        if (name) metadataUpdates.name = name;
+        if (school_id) metadataUpdates.school_id = school_id;
+        await supabaseAdmin.auth.admin.updateUserById(id, { user_metadata: metadataUpdates });
       }
 
       res.json({ success: true, coordinator: profile });
