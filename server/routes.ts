@@ -7737,6 +7737,198 @@ Para cada disciplina:
     }
   });
 
+  // ======================================== COORDINATOR MANAGEMENT ENDPOINTS ========================================
+
+  interface CoordinatorInput {
+    email: string;
+    name: string;
+    password: string;
+    school_id: string;
+    allowed_series: string[] | null; // null = full access
+  }
+
+  // POST /api/admin/coordinators - Create coordinator
+  // PROTEGIDO: Apenas super_admin
+  app.post("/api/admin/coordinators", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { email, name, password, school_id, allowed_series } = req.body as CoordinatorInput;
+
+      if (!email || !name || !password || !school_id) {
+        return res.status(400).json({ error: "Email, nome, senha e escola são obrigatórios" });
+      }
+
+      // Validate school exists
+      const { data: school, error: schoolError } = await supabaseAdmin
+        .from("schools")
+        .select("id, name")
+        .eq("id", school_id)
+        .single();
+
+      if (schoolError || !school) {
+        return res.status(400).json({ error: "Escola não encontrada" });
+      }
+
+      // Create auth user
+      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, role: "school_admin", school_id }
+      });
+
+      if (authError) {
+        console.error("[COORDINATOR] Auth error:", authError.message);
+        return res.status(500).json({ error: "Erro ao criar usuário", details: authError.message });
+      }
+
+      // Update profile with allowed_series (trigger already created base profile)
+      if (authUser.user && allowed_series !== undefined) {
+        await supabaseAdmin.from("profiles").update({ allowed_series }).eq("id", authUser.user.id);
+      }
+
+      res.json({
+        success: true,
+        coordinator: { id: authUser.user?.id, email, name, school_id, allowed_series }
+      });
+    } catch (error) {
+      console.error("[COORDINATOR] Error:", error);
+      res.status(500).json({ error: "Erro interno ao criar coordenador" });
+    }
+  });
+
+  // GET /api/admin/coordinators - List coordinators
+  // PROTEGIDO: Apenas super_admin
+  app.get("/api/admin/coordinators", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { school_id } = req.query;
+
+      let query = supabaseAdmin
+        .from("profiles")
+        .select(`id, email, name, role, school_id, allowed_series, created_at, schools!profiles_school_id_fkey (id, name)`)
+        .eq("role", "school_admin")
+        .order("created_at", { ascending: false });
+
+      if (school_id) {
+        query = query.eq("school_id", school_id);
+      }
+
+      const { data: coordinators, error } = await query;
+
+      if (error) {
+        console.error("[COORDINATOR] List error:", error);
+        return res.status(500).json({ error: "Erro ao listar coordenadores" });
+      }
+
+      res.json({ success: true, coordinators: coordinators || [] });
+    } catch (error) {
+      console.error("[COORDINATOR] Error:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  // PUT /api/admin/coordinators/:id - Update coordinator
+  // PROTEGIDO: Apenas super_admin
+  app.put("/api/admin/coordinators/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, allowed_series, school_id } = req.body;
+
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (allowed_series !== undefined) updates.allowed_series = allowed_series;
+      if (school_id !== undefined) updates.school_id = school_id;
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "Nenhum campo para atualizar" });
+      }
+
+      const { data: profile, error } = await supabaseAdmin
+        .from("profiles")
+        .update(updates)
+        .eq("id", id)
+        .eq("role", "school_admin")
+        .select()
+        .single();
+
+      if (error || !profile) {
+        return res.status(404).json({ error: "Coordenador não encontrado" });
+      }
+
+      if (name) {
+        await supabaseAdmin.auth.admin.updateUserById(id, { user_metadata: { name } });
+      }
+
+      res.json({ success: true, coordinator: profile });
+    } catch (error) {
+      console.error("[COORDINATOR] Update error:", error);
+      res.status(500).json({ error: "Erro ao atualizar coordenador" });
+    }
+  });
+
+  // DELETE /api/admin/coordinators/:id - Delete coordinator
+  // PROTEGIDO: Apenas super_admin
+  app.delete("/api/admin/coordinators/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", id)
+        .single();
+
+      if (!profile || profile.role !== "school_admin") {
+        return res.status(404).json({ error: "Coordenador não encontrado" });
+      }
+
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+
+      if (error) {
+        console.error("[COORDINATOR] Delete error:", error);
+        return res.status(500).json({ error: "Erro ao excluir coordenador" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[COORDINATOR] Error:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  // POST /api/admin/coordinators/:id/reset-password - Reset coordinator password
+  // PROTEGIDO: Apenas super_admin
+  app.post("/api/admin/coordinators/:id/reset-password", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { password } = req.body;
+
+      if (!password || password.length < 8) {
+        return res.status(400).json({ error: "Senha deve ter pelo menos 8 caracteres" });
+      }
+
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("role, email")
+        .eq("id", id)
+        .single();
+
+      if (!profile || profile.role !== "school_admin") {
+        return res.status(404).json({ error: "Coordenador não encontrado" });
+      }
+
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password });
+
+      if (error) {
+        return res.status(500).json({ error: "Erro ao resetar senha" });
+      }
+
+      res.json({ success: true, email: profile.email });
+    } catch (error) {
+      console.error("[COORDINATOR] Reset password error:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
   // ============================================================
   // ANSWER SHEET BATCHES - Gabaritos com QR Code
   // ============================================================
