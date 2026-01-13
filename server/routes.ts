@@ -6567,6 +6567,122 @@ Para cada disciplina:
     }
   });
 
+  // GET /api/escola/turmas/:turma/export-excel - Exportar notas da turma para Excel
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/turmas/:turma/export-excel", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const { turma } = req.params;
+      const decodedTurma = decodeURIComponent(turma);
+
+      console.log(`[ESCOLA EXPORT EXCEL] Exportando turma: ${decodedTurma}`);
+
+      // Buscar resultados da turma com todos os dados
+      const { data: answers, error } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          correct_answers,
+          wrong_answers,
+          blank_answers,
+          answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          confidence,
+          created_at,
+          exams(id, title, answer_key)
+        `)
+        .eq("turma", decodedTurma)
+        .order("correct_answers", { ascending: false });
+
+      if (error) throw error;
+
+      const results = answers || [];
+
+      if (results.length === 0) {
+        return res.status(404).json({ error: "Nenhum resultado encontrado para esta turma" });
+      }
+
+      // Agrupar por aluno (pegar melhor resultado)
+      const studentBest: Record<string, any> = {};
+      results.forEach((r: any) => {
+        const key = r.student_number || r.student_name;
+        if (!studentBest[key] || (r.correct_answers || 0) > (studentBest[key].correct_answers || 0)) {
+          studentBest[key] = r;
+        }
+      });
+
+      // Converter para formato do ExcelExporter
+      const students = Object.values(studentBest)
+        .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
+        .map((r: any) => ({
+          id: r.id,
+          studentNumber: r.student_number || "",
+          studentName: r.student_name || "",
+          turma: r.turma,
+          answers: r.answers || [],
+          correctAnswers: r.correct_answers || 0,
+          wrongAnswers: r.wrong_answers || 0,
+          blankAnswers: r.blank_answers || 0,
+          score: r.correct_answers ? (r.correct_answers / 90) * 10 : 0, // TCT score
+          confidence: r.confidence || 0,
+          pageNumber: 1,
+        }));
+
+      // Obter gabarito da primeira prova (se disponível)
+      const firstExam = results[0]?.exams;
+      const answerKey = firstExam?.answer_key || [];
+
+      // Preparar TRI scores
+      const triScores = new Map<string, number>();
+      const triScoresByArea = new Map<string, Record<string, number>>();
+
+      Object.values(studentBest).forEach((r: any) => {
+        // TRI geral (média das 4 áreas)
+        const triValues = [r.tri_lc, r.tri_ch, r.tri_cn, r.tri_mt].filter(v => v != null);
+        if (triValues.length > 0) {
+          const triMedia = triValues.reduce((a, b) => a + b, 0) / triValues.length;
+          triScores.set(r.id, triMedia);
+        }
+
+        // TRI por área
+        triScoresByArea.set(r.id, {
+          LC: r.tri_lc || 0,
+          CH: r.tri_ch || 0,
+          CN: r.tri_cn || 0,
+          MT: r.tri_mt || 0,
+        });
+      });
+
+      // Gerar Excel
+      const excelBuffer = await ExcelExporter.generateExcel({
+        students,
+        answerKey,
+        includeTRI: true,
+        triScores,
+        triScoresByArea,
+      });
+
+      // Sanitizar nome da turma para o arquivo
+      const safeTurmaName = decodedTurma.replace(/[^a-zA-Z0-9áéíóúâêîôûàèìòùãõäëïöüçÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÃÕÄËÏÖÜÇ\s-]/g, "").replace(/\s+/g, "_");
+      const fileName = `Notas_${safeTurmaName}_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      res.send(excelBuffer);
+
+      console.log(`[ESCOLA EXPORT EXCEL] Exportado com sucesso: ${students.length} alunos`);
+
+    } catch (error: any) {
+      console.error("[ESCOLA EXPORT EXCEL] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // GET /api/escola/alunos/:matricula/historico - Histórico completo de um aluno
   // PROTEGIDO: Apenas school_admin e super_admin
   app.get("/api/escola/alunos/:matricula/historico", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {

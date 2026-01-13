@@ -15,7 +15,7 @@ import {
   Loader2, LogOut, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Eye, X, Download,
-  BookOpen, CheckCircle2, XCircle, Filter
+  BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -857,14 +857,26 @@ export default function EscolaPage() {
                         <p className="font-medium">{turma.tri_mt?.toFixed(0) || '-'}</p>
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setSelectedTurmaModal(turma.turma)}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Ver Alunos
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setSelectedTurmaModal(turma.turma)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Ver Alunos
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => {
+                          window.open(`/api/escola/turmas/${encodeURIComponent(turma.turma)}/export-excel`, '_blank');
+                        }}
+                        title="Exportar para Excel"
+                      >
+                        <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
