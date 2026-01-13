@@ -28,6 +28,7 @@ import {
   updateStudentAnswers,
 } from "./src/answerSheetBatch.js";
 import { requireAuth, requireRole, requireSchoolAccess, type AuthenticatedRequest } from "./lib/auth.js";
+import { isTurmaAllowed } from "./lib/seriesFilter.js";
 import {
   transformStudentsForSupabase,
   transformStudentFromSupabase,
@@ -6293,6 +6294,9 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
   app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
+      const allowedSeries = (req as any).profile?.allowed_series || null;
+      console.log(`[ESCOLA DASHBOARD] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
+
       // Buscar todos os resultados
       const { data: answers, error: answersError } = await supabaseAdmin
         .from("student_answers")
@@ -6313,7 +6317,12 @@ Para cada disciplina:
 
       if (answersError) throw answersError;
 
-      const results = answers || [];
+      // Filter by allowed_series if coordinator has restrictions
+      const filteredAnswers = (answers || []).filter((a: any) =>
+        isTurmaAllowed(a.turma, allowedSeries)
+      );
+
+      const results = filteredAnswers;
 
       // Extrair séries das turmas (ex: "1ª Série A" -> "1ª Série")
       const extractSerie = (turma: string | null): string => {
