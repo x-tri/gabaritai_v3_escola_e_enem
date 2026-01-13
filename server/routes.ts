@@ -88,16 +88,16 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
     const axios = (await import("axios")).default;
     const FormData = (await import("form-data")).default;
     const formData = new FormData();
-    
+
     // Adicionar imagem como buffer
     formData.append("image", imageBuffer, {
       filename: `page_${pageNumber}.png`,
       contentType: "image/png",
     });
-    
+
     // Adicionar número da página como campo de formulário
     formData.append("page", pageNumber.toString());
-    
+
     // Adicionar configuração
     formData.append("config", config);
 
@@ -281,7 +281,7 @@ async function callPythonTRI(
 }> {
   try {
     const axios = (await import("axios")).default;
-    
+
     const response = await axios.post(
       `${PYTHON_TRI_SERVICE_URL}/api/calcular-tri`,
       {
@@ -299,7 +299,7 @@ async function callPythonTRI(
         timeout: 30000, // 30s timeout
       }
     );
-    
+
     return response.data;
   } catch (error: any) {
     console.error("[TRI SERVICE] Erro ao chamar serviço Python TRI:", error.message);
@@ -314,14 +314,14 @@ async function callPythonTRI(
  * Converte resposta do Python OMR para formato interno
  */
 function convertPythonOMRToInternal(
-  pythonResult: { 
+  pythonResult: {
     status: string;
     sucesso?: boolean;
-    pagina?: { 
+    pagina?: {
       numero?: number;
-      resultado: { 
-        questoes: Array<{numero: number; resposta: string}> | Record<string, string> 
-      } 
+      resultado: {
+        questoes: Array<{ numero: number; resposta: string }> | Record<string, string>
+      }
     };
     estatisticas?: any;
     mensagem?: string;
@@ -336,22 +336,22 @@ function convertPythonOMRToInternal(
       warnings: [pythonResult.mensagem || "Erro ao processar com Python OMR"],
     };
   }
-  
+
   const questoes = pythonResult.pagina?.resultado?.questoes;
   const detectedAnswers: (string | null)[] = [];
   const warnings: string[] = [];
   let answeredCount = 0;
-  
+
   // Verifica se questões é um array (novo formato) ou objeto (formato antigo)
   const isArrayFormat = Array.isArray(questoes);
-  
+
   console.log(`[DEBUG CONVERSION] Formato: ${isArrayFormat ? 'ARRAY' : 'OBJETO'}`);
   console.log(`[DEBUG CONVERSION] Total de questões: ${isArrayFormat ? questoes.length : Object.keys(questoes || {}).length}`);
-  
+
   if (isArrayFormat) {
     // NOVO FORMATO: Array de objetos [{numero: 1, resposta: "A"}, ...]
     console.log(`[DEBUG CONVERSION] Primeiras 5 questões:`, questoes.slice(0, 5).map((q: any) => `Q${q.numero}=${q.resposta}`).join(", "));
-    
+
     // Cria mapa de questões
     const questoesMap = new Map<number, string>();
     for (const q of questoes) {
@@ -359,16 +359,16 @@ function convertPythonOMRToInternal(
         questoesMap.set(q.numero, q.resposta);
       }
     }
-    
+
     for (let i = 1; i <= totalQuestions; i++) {
       const answer = questoesMap.get(i);
       const normalizedAnswer = answer ? String(answer).trim().toUpperCase() : null;
-      
+
       // Aceitar A-E como respostas válidas
       if (normalizedAnswer && /^[A-E]$/.test(normalizedAnswer)) {
         detectedAnswers.push(normalizedAnswer);
         answeredCount++;
-      } 
+      }
       // Aceitar "X" como dupla marcação (resposta inválida do aluno)
       else if (normalizedAnswer === "X") {
         detectedAnswers.push("X");
@@ -383,11 +383,11 @@ function convertPythonOMRToInternal(
     // FORMATO ANTIGO: Objeto {1: "A", 2: "B", ...}
     const questoesObj = questoes as Record<string, string>;
     console.log(`[DEBUG CONVERSION] Primeiras 5 questões:`, Object.keys(questoesObj).slice(0, 5).map(k => `Q${k}=${questoesObj[k]}`).join(", "));
-    
+
     for (let i = 1; i <= totalQuestions; i++) {
       const answer = questoesObj[String(i)];
       const normalizedAnswer = answer ? String(answer).trim().toUpperCase() : null;
-      
+
       // Aceitar A-E como respostas válidas
       if (normalizedAnswer && /^[A-E]$/.test(normalizedAnswer)) {
         detectedAnswers.push(normalizedAnswer);
@@ -404,7 +404,7 @@ function convertPythonOMRToInternal(
       }
     }
   }
-  
+
   // VALIDAÇÃO CRÍTICA: Garantir que sempre retornamos exatamente totalQuestions elementos
   if (detectedAnswers.length !== totalQuestions) {
     console.error(`[DEBUG CONVERSION] ERRO CRÍTICO: detectedAnswers tem ${detectedAnswers.length} elementos, mas deveria ter ${totalQuestions}`);
@@ -417,11 +417,11 @@ function convertPythonOMRToInternal(
       detectedAnswers.pop();
     }
   }
-  
+
   // DEBUG: Log estatísticas finais
   console.log(`[DEBUG CONVERSION] Respostas válidas detectadas: ${answeredCount}/${totalQuestions}`);
   console.log(`[DEBUG CONVERSION] Tamanho final do array: ${detectedAnswers.length} (esperado: ${totalQuestions})`);
-  
+
   // Log das primeiras 10 questões para debug
   const first10 = detectedAnswers.slice(0, 10).map((ans, idx) => `Q${idx + 1}="${ans || 'null'}"`).join(", ");
   console.log(`[DEBUG CONVERSION] Primeiras 10 questões: ${first10}`);
@@ -499,11 +499,11 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     console.log(`[UPLOAD] Recebendo arquivo: ${file.originalname}, tipo: ${file.mimetype}`);
     const isPDF = file.mimetype === "application/pdf";
-    const isImage = file.mimetype.startsWith("image/") && 
-                    (file.mimetype === "image/jpeg" || 
-                     file.mimetype === "image/png" || 
-                     file.mimetype === "image/webp");
-    
+    const isImage = file.mimetype.startsWith("image/") &&
+      (file.mimetype === "image/jpeg" ||
+        file.mimetype === "image/png" ||
+        file.mimetype === "image/webp");
+
     if (isPDF || isImage) {
       cb(null, true);
     } else {
@@ -519,9 +519,9 @@ const uploadCsv = multer({
   },
   fileFilter: (req, file, cb) => {
     console.log(`[UPLOAD CSV] Recebendo arquivo: ${file.originalname}, tipo: ${file.mimetype}`);
-    const isCSV = file.mimetype === "text/csv" || 
-                  file.mimetype === "application/vnd.ms-excel" ||
-                  file.originalname.toLowerCase().endsWith(".csv");
+    const isCSV = file.mimetype === "text/csv" ||
+      file.mimetype === "application/vnd.ms-excel" ||
+      file.originalname.toLowerCase().endsWith(".csv");
     if (isCSV) {
       cb(null, true);
     } else {
@@ -539,43 +539,43 @@ interface StudentFromCSV {
 function parseCSV(buffer: Buffer): StudentFromCSV[] {
   const content = buffer.toString("utf-8");
   const lines = content.split(/\r?\n/).filter(line => line.trim());
-  
+
   if (lines.length < 2) {
     throw new Error("CSV deve ter pelo menos o cabeçalho e uma linha de dados");
   }
-  
+
   // Detect separator (semicolon or comma)
   const headerLine = lines[0];
   const separator = headerLine.includes(";") ? ";" : ",";
-  
+
   const headers = headerLine.split(separator).map(h => h.trim().toLowerCase().replace(/^\uFEFF/, ""));
-  
+
   // Find column indices
   const nomeIdx = headers.findIndex(h => h.includes("nome"));
   const turmaIdx = headers.findIndex(h => h.includes("turma") || h.includes("classe") || h.includes("sala"));
   const matriculaIdx = headers.findIndex(h => h.includes("matricula") || h.includes("matrícula") || h.includes("inscricao") || h.includes("inscrição") || h.includes("id"));
-  
+
   if (nomeIdx === -1) {
     throw new Error("Coluna 'NOME' não encontrada no CSV");
   }
-  
+
   const students: StudentFromCSV[] = [];
-  
+
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    
+
     const values = line.split(separator).map(v => v.trim());
-    
+
     const nome = values[nomeIdx] || "";
     const turma = turmaIdx !== -1 ? values[turmaIdx] || "" : "";
     const matricula = matriculaIdx !== -1 ? values[matriculaIdx] || "" : "";
-    
+
     if (nome) {
       students.push({ nome, turma, matricula });
     }
   }
-  
+
   return students;
 }
 
@@ -593,7 +593,7 @@ async function extractTextFromImage(imageBuffer: Buffer): Promise<OCRResult> {
   try {
     console.log("[OCR] Usando DeepSeek-OCR para extrair texto...");
     const result = await extractTextFromImageDeepSeek(imageBuffer, "<image>\nFree OCR.");
-    
+
     return {
       text: result.text,
       confidence: result.confidence,
@@ -682,7 +682,7 @@ function parseStudentData(ocrResult: OCRResult, pageNumber: number): StudentData
     const allAnswers = text
       .toUpperCase()
       .match(/[A-E]/g) || [];
-    
+
     if (allAnswers.length >= 5) {
       students.push({
         id: randomUUID(),
@@ -712,10 +712,10 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     console.log(`[JOB ${jobId}]   - Tipo de arquivo: ${isImage ? '🖼️ IMAGEM' : '📄 PDF'}`);
     console.log(`[JOB ${jobId}]   - OCR Cabeçalho: 🤖 GPT Vision (mais preciso)`);
     console.log(`[JOB ${jobId}]   - OMR Bolhas: 🔥 OpenCV (rápido, sem custo)`);
-    
+
     // PASSO 1: Verificar serviços
     console.log(`\n[JOB ${jobId}] ━━━ PASSO 1/5: VERIFICANDO SERVIÇOS ━━━`);
-    
+
     let usePythonOMR = USE_PYTHON_OMR;
     const omrServiceUrl = USE_MODAL ? MODAL_OMR_HEALTH_URL : PYTHON_OMR_SERVICE_URL;
     if (usePythonOMR) {
@@ -730,21 +730,21 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
         console.log(`[JOB ${jobId}] ✅ Python OMR disponível e pronto! (${USE_MODAL ? 'Modal' : 'Local'})`);
       }
     }
-    
+
     // 🆕 Abordagem Híbrida: OpenCV (bolhas) + GPT Vision (header)
     if (enableOcr && process.env.OPENAI_API_KEY) {
       console.log(`[JOB ${jobId}] ✅ GPT Vision disponível para extração de header`);
     } else {
       console.warn(`[JOB ${jobId}] ⚠️ GPT Vision desativado (enableOcr=${enableOcr}, OPENAI_API_KEY=${process.env.OPENAI_API_KEY ? 'definida' : 'não definida'})`);
     }
-    
+
     // PASSO 2: Carregar PDF ou processar imagem
     console.log(`\n[JOB ${jobId}] ━━━ PASSO 2/5: CARREGANDO ARQUIVO ━━━`);
-    
+
     let pdfDoc: PDFDocument | null = null;
     let pageCount: number;
     let singleImageBuffer: Buffer | null = null;
-    
+
     try {
       if (isImage) {
         // Se for imagem, contar como 1 página
@@ -757,19 +757,19 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
         console.log(`[JOB ${jobId}] 📄 Carregando PDF (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)...`);
         pdfDoc = await PDFDocument.load(fileBuffer);
         pageCount = pdfDoc.getPageCount();
-        
+
         if (pageCount === 0) {
           throw new Error("PDF não contém páginas ou está corrompido");
         }
-        
+
         // Garantir que totalPages está definido (já deveria estar, mas garantir)
         if (job.totalPages === 0) {
           job.totalPages = pageCount;
         }
-        
+
         console.log(`[JOB ${jobId}] 📄 PDF carregado com ${pageCount} página(s)`);
       }
-      
+
       job.status = "processing";
     } catch (fileError) {
       console.error(`[JOB ${jobId}] Erro ao carregar arquivo:`, fileError);
@@ -789,10 +789,10 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
       // Declarar variáveis no início da função para evitar "used before initialization"
       let studentName = `Aluno ${pageNumber}`;
       let studentNumber = `P${pageNumber.toString().padStart(3, "0")}`;
-      
+
       try {
         let imageBuffer: Buffer;
-        
+
         if (isImage) {
           // Se for imagem, usar direto
           imageBuffer = singleImageBuffer!;
@@ -833,8 +833,8 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           imageBuffer = await fs.readFile(`${tempPngPath}${outputExt}`);
 
           // Cleanup temp files
-          await fs.unlink(tempPdfPath).catch(() => {});
-          await fs.unlink(`${tempPngPath}${outputExt}`).catch(() => {});
+          await fs.unlink(tempPdfPath).catch(() => { });
+          await fs.unlink(`${tempPngPath}${outputExt}`).catch(() => { });
         }
 
         // PASSO 3: Processar OMR + QR Code
@@ -1027,23 +1027,23 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     // Se há 2 páginas e alunos com mesmo número de matrícula, combinar respostas
     if (pageCount === 2 && job.students.length === 2) {
       const [student1, student2] = job.students;
-      
+
       // Verificar se são do mesmo aluno (mesmo número de matrícula ou nome similar)
-      const sameStudent = student1.studentNumber === student2.studentNumber || 
-                         (student1.studentName && student2.studentName && 
-                          student1.studentName.toLowerCase().trim() === student2.studentName.toLowerCase().trim());
-      
+      const sameStudent = student1.studentNumber === student2.studentNumber ||
+        (student1.studentName && student2.studentName &&
+          student1.studentName.toLowerCase().trim() === student2.studentName.toLowerCase().trim());
+
       if (sameStudent && student1.answers.length === 90 && student2.answers.length === 90) {
         console.log(`[JOB ${jobId}] 🔗 Combinando respostas de 2 páginas do mesmo aluno: ${student1.studentNumber || student1.studentName}`);
         console.log(`[JOB ${jobId}]   - Página 1: ${student1.answers.filter(a => a && a !== "").length} respostas (Q1-90)`);
         console.log(`[JOB ${jobId}]   - Página 2: ${student2.answers.filter(a => a && a !== "").length} respostas (será mapeado para Q91-180)`);
-        
+
         // Combinar respostas: página 1 (Q1-90) + página 2 (Q91-180)
         const combinedAnswers = [...student1.answers, ...student2.answers];
-        const combinedAiAnswers = student1.aiAnswers && student2.aiAnswers 
+        const combinedAiAnswers = student1.aiAnswers && student2.aiAnswers
           ? [...student1.aiAnswers, ...student2.aiAnswers]
           : undefined;
-        
+
         // Usar dados do primeiro aluno como base
         const combinedStudent: StudentData = {
           ...student1,
@@ -1052,10 +1052,10 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           // Manter informações de ambas as páginas no rawText
           rawText: `Página 1: ${student1.rawText || 'OK'} | Página 2: ${student2.rawText || 'OK'}`,
         };
-        
+
         // Substituir os 2 alunos separados por 1 aluno combinado
         job.students = [combinedStudent];
-        
+
         console.log(`[JOB ${jobId}] ✅ Aluno combinado: ${combinedAnswers.filter(a => a && a !== "").length}/180 questões respondidas`);
       }
     }
@@ -1077,16 +1077,16 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
   // Registrar rotas de debug
   registerDebugRoutes(app);
-  
+
   // Start PDF processing - returns jobId immediately
   // PROTEGIDO: Apenas super_admin pode processar PDFs (funcionalidade ENEM/XTRI)
   app.post("/api/process-pdf", requireAuth, requireRole('super_admin'), upload.single("pdf"), async (req: Request, res: Response) => {
     try {
       console.log("[UPLOAD] Recebendo arquivo...");
-      
+
       if (!req.file) {
         res.status(400).json({ error: "Nenhum arquivo enviado" });
         return;
@@ -1103,11 +1103,11 @@ export async function registerRoutes(
 
       // Create job
       const jobId = randomUUID();
-      
+
       // Verificar se é imagem ou PDF
       const isImage = req.file.mimetype.startsWith("image/");
       let initialPageCount = 0;
-      
+
       if (isImage) {
         // Se for imagem, contar como 1 página
         initialPageCount = 1;
@@ -1124,13 +1124,13 @@ export async function registerRoutes(
           console.log(`[PDF] PDF carregado com ${initialPageCount} páginas`);
         } catch (pdfError) {
           console.error("[PDF] Erro ao carregar PDF:", pdfError);
-          res.status(400).json({ 
-            error: pdfError instanceof Error ? pdfError.message : "Erro ao carregar o PDF. Por favor, tente novamente." 
+          res.status(400).json({
+            error: pdfError instanceof Error ? pdfError.message : "Erro ao carregar o PDF. Por favor, tente novamente."
           });
           return;
         }
       }
-      
+
       const job: ProcessingJob = {
         id: jobId,
         status: "queued",
@@ -1164,13 +1164,13 @@ export async function registerRoutes(
       // Verificar se OMR Ultra está disponível
       const omrAvailable = await checkPythonOMRService();
       if (!omrAvailable) {
-        res.status(500).json({ 
+        res.status(500).json({
           error: "OMR Ultra não disponível",
           help: "Execute: cd python_omr_service && python3 app_ultra.py"
         });
         return;
       }
-      
+
       res.json({
         success: true,
         message: "🔥 OMR Ultra está funcionando!",
@@ -1278,7 +1278,7 @@ export async function registerRoutes(
 
   // Store for generated PDF files (in-memory for now)
   const generatedPdfs = new Map<string, { files: { name: string; data: Buffer }[]; createdAt: number }>();
-  
+
   // Cleanup old generated PDFs (older than 30 minutes)
   setInterval(() => {
     const now = Date.now();
@@ -1297,39 +1297,39 @@ export async function registerRoutes(
     try {
       console.log("[GENERATE-PDF] Iniciando geração de PDFs personalizados...");
       const startTime = Date.now();
-      
+
       if (!req.file) {
         return res.status(400).json({ error: "Arquivo CSV não enviado" });
       }
-      
+
       // Parse CSV
       const students = parseCSV(req.file.buffer);
       console.log(`[GENERATE-PDF] ${students.length} alunos encontrados no CSV`);
-      
+
       if (students.length === 0) {
         return res.status(400).json({ error: "Nenhum aluno encontrado no CSV" });
       }
-      
+
       // Load template PDF (updated version without "RESULTADO FINAL" label)
       const templatePath = path.join(process.cwd(), "attached_assets", "template_gabarito_v2.pdf");
       let templateBytes: Buffer;
-      
+
       try {
         templateBytes = await fs.readFile(templatePath);
       } catch (err) {
         console.error("[GENERATE-PDF] Erro ao carregar template:", err);
         return res.status(500).json({ error: "Template de gabarito não encontrado" });
       }
-      
+
       // Load libraries once
       const { StandardFonts, rgb } = await import("pdf-lib");
-      
+
       // Load template once and get dimensions
       const templatePdf = await PDFDocument.load(templateBytes);
       const templatePage = templatePdf.getPage(0);
       const pageWidth = templatePage.getWidth();
       const pageHeight = templatePage.getHeight();
-      
+
       // Pre-calculate coordinates (same for all pages)
       // Nome completo: na linha de escrita abaixo do label "Nome completo:"
       // Usando coordenada Y fixa para posicionar na linha de escrita do campo NOME
@@ -1340,55 +1340,55 @@ export async function registerRoutes(
       const turmaY = pageHeight - (0.145 * pageHeight) - 20; // Middle of RESULTADO FINAL box
       const matriculaX = 0.800 * pageWidth + 10;
       const matriculaY = pageHeight - (0.145 * pageHeight) - 20; // Same level
-      
+
       // For large batches, limit pages per PDF to avoid memory issues
       const maxPagesPerPdf = 50;
       const totalPdfs = Math.ceil(students.length / maxPagesPerPdf);
-      
+
       // Always save PDF to server and return download URL (works in Replit sandbox)
       console.log(`[GENERATE-PDF] Gerando ${totalPdfs} arquivo(s) PDF`);
-      
+
       const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const files: { name: string; data: Buffer }[] = [];
-      
+
       // Generate single PDF
       if (totalPdfs === 1) {
         const outputPdf = await PDFDocument.create();
         const font = await outputPdf.embedFont(StandardFonts.Helvetica);
         const fontBold = await outputPdf.embedFont(StandardFonts.HelveticaBold);
         const textColor = rgb(0, 0, 0.5);
-        
+
         for (const student of students) {
           const [copiedPage] = await outputPdf.copyPages(templatePdf, [0]);
           outputPdf.addPage(copiedPage);
-          
+
           copiedPage.drawText(student.nome.toUpperCase(), {
             x: nomeX, y: nomeY, size: 11, font: fontBold, color: textColor,
           });
-          
+
           if (student.turma) {
             copiedPage.drawText(student.turma, {
               x: turmaX, y: turmaY, size: 10, font: font, color: textColor,
             });
           }
-          
+
           if (student.matricula) {
             copiedPage.drawText(student.matricula, {
               x: matriculaX, y: matriculaY, size: 10, font: font, color: textColor,
             });
           }
         }
-        
+
         const pdfBytes = await outputPdf.save();
         const fileName = `gabaritos_personalizados_${new Date().toISOString().split("T")[0]}.pdf`;
         files.push({ name: fileName, data: Buffer.from(pdfBytes) });
-        
+
         // Store and return URL
         generatedPdfs.set(batchId, { files, createdAt: Date.now() });
-        
+
         const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
         console.log(`[GENERATE-PDF] PDF gerado com ${students.length} páginas em ${elapsedTime}s`);
-        
+
         return res.json({
           success: true,
           message: `${students.length} gabaritos gerados`,
@@ -1402,54 +1402,54 @@ export async function registerRoutes(
           elapsedTime: parseFloat(elapsedTime),
         });
       }
-      
+
       // For multiple PDFs, generate all and return links
       console.log(`[GENERATE-PDF] Gerando ${totalPdfs} arquivos PDF (máximo ${maxPagesPerPdf} páginas cada)`);
-      
+
       for (let pdfIndex = 0; pdfIndex < totalPdfs; pdfIndex++) {
         const startIdx = pdfIndex * maxPagesPerPdf;
         const endIdx = Math.min(startIdx + maxPagesPerPdf, students.length);
         const batchStudents = students.slice(startIdx, endIdx);
-        
+
         console.log(`[GENERATE-PDF] Gerando PDF ${pdfIndex + 1}/${totalPdfs} (alunos ${startIdx + 1}-${endIdx})`);
-        
+
         const outputPdf = await PDFDocument.create();
         const font = await outputPdf.embedFont(StandardFonts.Helvetica);
         const fontBold = await outputPdf.embedFont(StandardFonts.HelveticaBold);
         const textColor = rgb(0, 0, 0.5);
-        
+
         for (const student of batchStudents) {
           const [copiedPage] = await outputPdf.copyPages(templatePdf, [0]);
           outputPdf.addPage(copiedPage);
-          
+
           copiedPage.drawText(student.nome.toUpperCase(), {
             x: nomeX, y: nomeY, size: 11, font: fontBold, color: textColor,
           });
-          
+
           if (student.turma) {
             copiedPage.drawText(student.turma, {
               x: turmaX, y: turmaY, size: 10, font: font, color: textColor,
             });
           }
-          
+
           if (student.matricula) {
             copiedPage.drawText(student.matricula, {
               x: matriculaX, y: matriculaY, size: 10, font: font, color: textColor,
             });
           }
         }
-        
+
         const pdfBytes = await outputPdf.save();
         const fileName = `gabaritos_parte_${(pdfIndex + 1).toString().padStart(2, "0")}_de_${totalPdfs.toString().padStart(2, "0")}.pdf`;
         files.push({ name: fileName, data: Buffer.from(pdfBytes) });
       }
-      
+
       // Store the files for download
       generatedPdfs.set(batchId, { files, createdAt: Date.now() });
-      
+
       const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
       console.log(`[GENERATE-PDF] ${totalPdfs} PDFs gerados (${students.length} páginas total) em ${elapsedTime}s`);
-      
+
       // Return JSON with download links
       res.json({
         success: true,
@@ -1458,14 +1458,14 @@ export async function registerRoutes(
         files: files.map((f, idx) => ({
           name: f.name,
           downloadUrl: `/api/download-pdf/${batchId}/${idx}`,
-          pages: idx === files.length - 1 
-            ? students.length - (idx * maxPagesPerPdf) 
+          pages: idx === files.length - 1
+            ? students.length - (idx * maxPagesPerPdf)
             : maxPagesPerPdf
         })),
         totalStudents: students.length,
         elapsedTime: parseFloat(elapsedTime),
       });
-      
+
     } catch (error) {
       console.error("[GENERATE-PDF] Erro:", error);
       res.status(500).json({
@@ -1474,42 +1474,42 @@ export async function registerRoutes(
       });
     }
   });
-  
+
   // Download individual PDF file
   app.get("/api/download-pdf/:batchId/:fileIndex", (req: Request, res: Response) => {
     const { batchId, fileIndex } = req.params;
     const idx = parseInt(fileIndex, 10);
-    
+
     const batch = generatedPdfs.get(batchId);
     if (!batch) {
       return res.status(404).json({ error: "Lote não encontrado ou expirado" });
     }
-    
+
     if (isNaN(idx) || idx < 0 || idx >= batch.files.length) {
       return res.status(404).json({ error: "Arquivo não encontrado" });
     }
-    
+
     const file = batch.files[idx];
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
     res.setHeader("Content-Length", file.data.length.toString());
     res.send(file.data);
   });
-  
+
   // Save temporary PDF for download (workaround for Replit sandbox)
   app.post("/api/save-temp-pdf", upload.single("pdf"), (req: Request, res: Response) => {
     if (!req.file) {
       return res.status(400).json({ error: "Arquivo não enviado" });
     }
-    
+
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const fileName = req.file.originalname || "gabaritos.pdf";
-    
-    generatedPdfs.set(tempId, { 
-      files: [{ name: fileName, data: req.file.buffer }], 
-      createdAt: Date.now() 
+
+    generatedPdfs.set(tempId, {
+      files: [{ name: fileName, data: req.file.buffer }],
+      createdAt: Date.now()
     });
-    
+
     res.json({
       success: true,
       downloadUrl: `/api/download-pdf/${tempId}/0`,
@@ -1522,9 +1522,9 @@ export async function registerRoutes(
       if (!req.file) {
         return res.status(400).json({ error: "Arquivo CSV não enviado" });
       }
-      
+
       const students = parseCSV(req.file.buffer);
-      
+
       res.json({
         success: true,
         totalStudents: students.length,
@@ -1548,25 +1548,25 @@ export async function registerRoutes(
   app.get("/api/download-project-zip", async (req: Request, res: Response) => {
     try {
       console.log("[DOWNLOAD-ZIP] Iniciando criação do ZIP do projeto...");
-      
+
       const projectRoot = process.cwd();
       const zipFileName = `gabaritosxtri_${new Date().toISOString().split("T")[0]}.zip`;
-      
+
       // Set headers for file download
       res.setHeader("Content-Type", "application/zip");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${zipFileName}"`
       );
-      
+
       // Create archiver
       const archive = archiver("zip", {
         zlib: { level: 9 }, // Maximum compression
       });
-      
+
       // Pipe archive data to response
       archive.pipe(res);
-      
+
       // Files and directories to include
       const includePaths = [
         "client",
@@ -1587,7 +1587,7 @@ export async function registerRoutes(
         "replit.md",
         ".gitignore",
       ];
-      
+
       // Files and directories to exclude
       const excludePatterns = [
         "node_modules",
@@ -1598,7 +1598,7 @@ export async function registerRoutes(
         ".local",
         "*.zip",
       ];
-      
+
       // Helper function to check if path should be excluded
       const shouldExclude = (filePath: string): boolean => {
         return excludePatterns.some((pattern) => {
@@ -1609,22 +1609,22 @@ export async function registerRoutes(
           return filePath.includes(pattern);
         });
       };
-      
+
       // Helper function to add directory recursively
       const addDirectory = async (dirPath: string, zipPath: string) => {
         try {
           const entries = await fs.readdir(dirPath, { withFileTypes: true });
-          
+
           for (const entry of entries) {
             const fullPath = path.join(dirPath, entry.name);
             const relativePath = path.relative(projectRoot, fullPath);
             const zipEntryPath = path.join(zipPath, entry.name);
-            
+
             // Skip excluded paths
             if (shouldExclude(relativePath)) {
               continue;
             }
-            
+
             if (entry.isDirectory()) {
               await addDirectory(fullPath, zipEntryPath);
             } else if (entry.isFile()) {
@@ -1635,14 +1635,14 @@ export async function registerRoutes(
           console.warn(`[DOWNLOAD-ZIP] Erro ao adicionar diretório ${dirPath}:`, error);
         }
       };
-      
+
       // Add files and directories
       for (const includePath of includePaths) {
         const fullPath = path.join(projectRoot, includePath);
-        
+
         try {
           const stat = await fs.stat(fullPath);
-          
+
           if (stat.isDirectory()) {
             await addDirectory(fullPath, includePath);
           } else if (stat.isFile()) {
@@ -1652,10 +1652,10 @@ export async function registerRoutes(
           console.warn(`[DOWNLOAD-ZIP] Arquivo/diretório não encontrado: ${includePath}`);
         }
       }
-      
+
       // Finalize the archive
       await archive.finalize();
-      
+
       console.log(`[DOWNLOAD-ZIP] ZIP criado com sucesso: ${zipFileName}`);
     } catch (error) {
       console.error("[DOWNLOAD-ZIP] Erro ao criar ZIP:", error);
@@ -1797,7 +1797,7 @@ export async function registerRoutes(
       // Verificar se serviço Python TRI está online
       const triAvailable = await checkPythonTRIService();
       if (!triAvailable) {
-        res.status(503).json({ 
+        res.status(503).json({
           error: "Serviço TRI offline",
           details: `O serviço Python TRI não está respondendo em ${PYTHON_TRI_SERVICE_URL}`
         });
@@ -1856,12 +1856,12 @@ export async function registerRoutes(
       const start = startQuestion || 1;
       const end = endQuestion || answerKey.length;
       const expectedQuestions = end - start + 1;
-      
+
       // Validar que o gabarito tem o tamanho correto
       if (answerKey.length !== expectedQuestions && answerKey.length !== 45) {
         console.warn(`[TRI] ⚠️ Gabarito com ${answerKey.length} questões, esperado ${expectedQuestions} ou 45`);
       }
-      
+
       // Verificar se as respostas já vieram fatiadas do frontend
       const primeiroAluno = students[0];
       if (primeiroAluno && primeiroAluno.answers) {
@@ -1875,24 +1875,24 @@ export async function registerRoutes(
           }
         }
       }
-      
+
       console.log(`[TRI] 📊 Calculando TRI para área ${area}: questões ${start}-${end}, gabarito com ${answerKey.length} itens`);
 
       // TENTAR USAR SERVIÇO PYTHON V2 PRIMEIRO
       const triV2Available = await checkPythonTRIService();
-      
+
       if (triV2Available && USE_PYTHON_TRI) {
         console.log(`[TRI] Usando serviço Python V2 para área ${area}...`);
-        
+
         try {
           // Preparar dados para o serviço Python V2
           // IMPORTANTE: O frontend JÁ ENVIA as respostas FATIADAS (45 questões por área)
           // Então NÃO devemos fatiar novamente aqui!
           // As respostas já estão como [0-44] para qualquer área.
-          
+
           const alunosParaPython = students.map(student => {
             const studentAnswers = student.answers || [];
-            
+
             // O frontend já enviou as respostas fatiadas para esta área
             // Então usamos diretamente, sem fatiar novamente
             // Se o aluno tem exatamente 45 respostas (ou igual ao gabarito), já está fatiado
@@ -1907,14 +1907,14 @@ export async function registerRoutes(
                 acertosArea++;
               }
             });
-            
+
             // Converter array para formato Python: {q1: "A", q2: "B", ...}
             const respostasObj: Record<string, string> = {};
             answersToUse.forEach((answer, idx) => {
               const questionNum = idx + 1; // Sempre 1, 2, 3... para o Python
               respostasObj[`q${questionNum}`] = answer ? String(answer).toUpperCase().trim() : "";
             });
-            
+
             // 🔎 Log fino por aluno (primeiro apenas) para auditoria
             // Mostra acertos calculados aqui e primeira/última questão dessa área
             const first = answersToUse[0] ?? "";
@@ -1928,7 +1928,7 @@ export async function registerRoutes(
               ...respostasObj // Espalhar as respostas q1, q2, q3...
             };
           });
-          
+
           // Converter gabarito para formato Python: {1: "A", 2: "B", ...}
           // O gabarito já vem fatiado do frontend, então usar índices 1-45
           const gabaritoObj: Record<string, string> = {};
@@ -1947,42 +1947,42 @@ export async function registerRoutes(
             console.log(`[TRI][PY-REQ] Área ${area} (amostra envio): id=${aluno0.id || aluno0.nome} ` +
               `q1..q5=${q1},${q2},${q3},${q4},${q5} | g1..g5=${gabaritoObj['1']},${gabaritoObj['2']},${gabaritoObj['3']},${gabaritoObj['4']},${gabaritoObj['5']} | acertos=${aluno0.acertos ?? '-'}`);
           }
-          
+
           // Configurar áreas baseado na área sendo calculada
           // Para cálculo individual de área, usar apenas questões 1 até tamanho do gabarito
           const areasConfig: Record<string, [number, number]> = {};
           areasConfig[area] = [1, answerKey.length]; // Área atual usa todo o gabarito passado
-          
+
           // =====================================================
           // VALIDAÇÃO DE SEGURANÇA - NUNCA ENVIAR DADOS INCORRETOS
           // =====================================================
           const primeiroAluno = alunosParaPython[0];
           const qtdRespostasAluno = Object.keys(primeiroAluno).filter(k => k.startsWith('q')).length;
           const qtdGabarito = Object.keys(gabaritoObj).length;
-          
+
           if (qtdRespostasAluno !== qtdGabarito) {
             console.error(`[TRI] ❌ ERRO CRÍTICO: Quantidade de respostas (${qtdRespostasAluno}) não corresponde ao gabarito (${qtdGabarito})!`);
             console.error(`[TRI] ❌ Área: ${area}, Start: ${start}, End: ${end}`);
             throw new Error(`Inconsistência de dados: ${qtdRespostasAluno} respostas vs ${qtdGabarito} no gabarito`);
           }
-          
+
           // Log de verificação (apenas primeiro aluno para não poluir)
           console.log(`[TRI] ✅ Validação OK: ${qtdRespostasAluno} respostas = ${qtdGabarito} gabarito`);
           console.log(`[TRI] 📤 Enviando ${alunosParaPython.length} alunos para Python V2, área ${area}, questões ${start}-${end} (${answerKey.length} questões)`);
-          
+
           // Debug: Mostrar amostra das primeiras 3 questões para verificação
           const alunoAny = primeiroAluno as any;
           const amostraRespostas = [alunoAny.q1, alunoAny.q2, alunoAny.q3].join(',');
           const amostraGabarito = [gabaritoObj['1'], gabaritoObj['2'], gabaritoObj['3']].join(',');
           console.log(`[TRI] 📋 Amostra aluno 1: ${amostraRespostas} | Gabarito: ${amostraGabarito}`);
-          
+
           // Chamar serviço Python TRI V2
           const pythonResponse = await callPythonTRI(
             alunosParaPython,
             gabaritoObj,
             areasConfig
           );
-          
+
           if (pythonResponse && pythonResponse.resultados) {
             console.log(`[TRI] Python V2 retornou ${pythonResponse.resultados.length} resultados para área ${area}`);
             // Log seguro de amostra para auditoria
@@ -2003,16 +2003,16 @@ export async function registerRoutes(
                 `acertos LC=${acLc} CH=${acCh} CN=${acCn} MT=${acMt}`
               );
             }
-            
+
             // Mapear resultados do Python para o formato esperado
             const results = pythonResponse.resultados.map((r: any) => {
               // Encontrar o aluno correspondente
               const aluno = alunosParaPython.find(a => a.id === r.id || a.nome === r.nome);
-              
+
               // Pegar a TRI específica da área
               const triAreaKey = `tri_${area.toLowerCase()}`;
               const triScore = r[triAreaKey] || r.tri_geral || 0;
-              
+
               return {
                 studentId: aluno?.id || r.id || r.nome,
                 triScore: triScore,
@@ -2034,7 +2034,7 @@ export async function registerRoutes(
           console.error(`[TRI] Erro ao usar Python V2, fallback para TypeScript:`, pythonError);
         }
       }
-      
+
       // FALLBACK: Usar calculador TypeScript local
       console.log(`[TRI] Usando calculador TypeScript local para área ${area}...`);
 
@@ -2043,10 +2043,10 @@ export async function registerRoutes(
       let finalQuestionStats = questionStats;
       if (!finalQuestionStats || finalQuestionStats.length === 0) {
         console.log("[TRI BACKEND] PASSO 1: Calculando estatísticas da prova...");
-        
+
         const start = startQuestion || 1;
         const end = endQuestion || answerKey.length;
-        
+
         finalQuestionStats = QuestionStatsProcessor.calculateQuestionStats(
           students,
           answerKey,
@@ -2065,11 +2065,11 @@ export async function registerRoutes(
 
       // PASSO 2: Calcular TRI individual usando as estatísticas
       console.log("[TRI BACKEND] PASSO 2: Calculando TRI individual para cada aluno...");
-      
+
       // Se foi especificado um range, usar apenas as respostas e gabarito daquela área
       let studentsForCalculation = students;
       let answerKeyForCalculation = answerKey;
-      
+
       if (startQuestion && endQuestion) {
         studentsForCalculation = students.map(student => ({
           ...student,
@@ -2097,7 +2097,7 @@ export async function registerRoutes(
       if (validResults.length === 0) {
         console.error(`[TRI BACKEND] NENHUM RESULTADO VÁLIDO! Verifique se o CSV tem dados para área ${area}`);
       }
-      
+
       res.json({ results: adjustedResults, usarCoerencia });
     } catch (error) {
       console.error("[TRI BACKEND] Erro ao calcular TRI:", error);
@@ -2121,7 +2121,7 @@ export async function registerRoutes(
       // Calcular estatísticas básicas
       const triValues = Object.values(triScores) as number[];
       const avgTRI = triValues.reduce((a, b) => a + b, 0) / triValues.length;
-      
+
       // Agrupar alunos por desempenho
       const grupos = {
         reforco: triValues.filter(t => t < 400).length,
@@ -2144,7 +2144,7 @@ export async function registerRoutes(
           const scoresForArea = Object.values(triScoresByArea)
             .map((scores: any) => scores[area])
             .filter((score): score is number => typeof score === 'number' && score > 0);
-          
+
           if (scoresForArea.length > 0) {
             const areaAvg = scoresForArea.reduce((a, b) => a + b, 0) / scoresForArea.length;
             const diff = areaAvg - avgTRI;
@@ -2193,17 +2193,17 @@ export async function registerRoutes(
 
 📈 DESEMPENHO POR ÁREA (Comparativo com média da turma):
 ${Object.entries(areaAnalysis).map(([code, data]: [string, any]) => {
-  const status = data.diff < -20 ? '🔴 CRÍTICO' : data.diff < 0 ? '🟡 ATENÇÃO' : '🟢 BOM';
-  return `- ${data.name}: ${data.average} pontos (${data.diff >= 0 ? '+' : ''}${data.diff} pts) ${status}`;
-}).join('\n')}
+        const status = data.diff < -20 ? '🔴 CRÍTICO' : data.diff < 0 ? '🟡 ATENÇÃO' : '🟢 BOM';
+        return `- ${data.name}: ${data.average} pontos (${data.diff >= 0 ? '+' : ''}${data.diff} pts) ${status}`;
+      }).join('\n')}
 ${analiseHabilidades}
 
 👥 DESTAQUES INDIVIDUAIS:
 Melhores desempenhos:
-${top3.map((s: { name: string; tri: number; areas: Record<string, number> }, i: number) => `${i+1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC||0)} CH:${Math.round(s.areas.CH||0)} CN:${Math.round(s.areas.CN||0)} MT:${Math.round(s.areas.MT||0)})`).join('\n')}
+${top3.map((s: { name: string; tri: number; areas: Record<string, number> }, i: number) => `${i + 1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC || 0)} CH:${Math.round(s.areas.CH || 0)} CN:${Math.round(s.areas.CN || 0)} MT:${Math.round(s.areas.MT || 0)})`).join('\n')}
 
 Precisam atenção urgente:
-${bottom3.map((s: { name: string; tri: number; areas: Record<string, number> }, i: number) => `${i+1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC||0)} CH:${Math.round(s.areas.CH||0)} CN:${Math.round(s.areas.CN||0)} MT:${Math.round(s.areas.MT||0)})`).join('\n')}
+${bottom3.map((s: { name: string; tri: number; areas: Record<string, number> }, i: number) => `${i + 1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC || 0)} CH:${Math.round(s.areas.CH || 0)} CN:${Math.round(s.areas.CN || 0)} MT:${Math.round(s.areas.MT || 0)})`).join('\n')}
 
 🎯 FORNEÇA ANÁLISE ESTRUTURADA:
 
@@ -2243,8 +2243,8 @@ IMPORTANTE:
       const CHATGPT_MODEL = process.env.CHATGPT_MODEL || "gpt-4o-mini";
 
       if (!OPENAI_API_KEY) {
-        res.status(500).json({ 
-          error: "ChatGPT não configurado. Configure OPENAI_API_KEY nas variáveis de ambiente." 
+        res.status(500).json({
+          error: "ChatGPT não configurado. Configure OPENAI_API_KEY nas variáveis de ambiente."
         });
         return;
       }
@@ -2303,7 +2303,7 @@ IMPORTANTE:
   // ============================================================================
   // ENDPOINT DE ANÁLISE ENEM/TRI COM ASSISTANT API
   // ============================================================================
-  
+
   app.post("/api/analise-enem-tri", async (req: Request, res: Response) => {
     try {
       const {
@@ -2430,7 +2430,7 @@ IMPORTANTE:
       // ============================================================
       // MONTAGEM DA MENSAGEM - ANÁLISE INDIVIDUAL
       // ============================================================
-      
+
       const montarMensagemIndividual = (): string => {
         // Verificar se temos acertos por área
         const temAcertosPorArea = acertosPorArea.LC !== null || acertosPorArea.CH !== null;
@@ -2547,17 +2547,17 @@ Ordenar áreas por urgência (menor TRI primeiro):
       // ============================================================
       // MONTAGEM DA MENSAGEM - ANÁLISE DE TURMA
       // ============================================================
-      
+
       const montarMensagemTurma = (): string => {
         const turmaData = dadosAluno.turmaCompleta;
-        
+
         // Montar ranking se disponível
         let rankingTexto = 'Não disponível';
         if (turmaData.alunos && turmaData.alunos.length > 0) {
           const alunosOrdenados = [...turmaData.alunos]
             .sort((a: any, b: any) => (b.tri?.geral || b.triGeral || 0) - (a.tri?.geral || a.triGeral || 0))
             .slice(0, 10);
-          
+
           rankingTexto = alunosOrdenados
             .map((aluno: any, idx: number) => {
               const triAluno = aluno.tri?.geral || aluno.triGeral || 0;
@@ -2573,7 +2573,7 @@ Ordenar áreas por urgência (menor TRI primeiro):
             .filter((q: any) => (q.percentualAcertos || q.percentual || 0) < 50)
             .sort((a: any, b: any) => (a.percentualAcertos || a.percentual || 0) - (b.percentualAcertos || b.percentual || 0))
             .slice(0, 15);
-          
+
           if (criticas.length > 0) {
             questoesCriticasTexto = criticas
               .map((q: any) => `Q${q.questao || q.numero} (${q.area}): ${(q.percentualAcertos || q.percentual || 0).toFixed(1)}% acertos`)
@@ -2586,7 +2586,7 @@ Ordenar áreas por urgência (menor TRI primeiro):
         if (turmaData.alunos && turmaData.alunos.length > 0) {
           const criticos = turmaData.alunos
             .filter((a: any) => (a.tri?.geral || a.triGeral || 0) < 450);
-          
+
           if (criticos.length > 0) {
             alunosCriticosTexto = criticos
               .map((a: any) => `- ${a.nome || a.name}: TRI ${(a.tri?.geral || a.triGeral || 0).toFixed(2)}`)
@@ -2741,7 +2741,7 @@ Para cada questão com baixo % de acertos:
       if (!runResponse.ok) {
         const error = await runResponse.json();
         const errorMsg = error.error?.message || JSON.stringify(error);
-        
+
         // Mensagem mais clara para erro de Assistant não encontrado
         if (errorMsg.includes("No assistant found")) {
           throw new Error(
@@ -2750,7 +2750,7 @@ Para cada questão com baixo % de acertos:
             `Acesse: https://platform.openai.com/assistants para verificar.`
           );
         }
-        
+
         throw new Error(`Erro ao executar run: ${errorMsg}`);
       }
 
@@ -2810,7 +2810,7 @@ Para cada questão com baixo % de acertos:
       }
 
       const messagesData = await messagesResponse.json();
-      
+
       // Encontrar a última mensagem do assistant
       const assistantMessages = messagesData.data
         .filter((msg: any) => msg.role === "assistant")
@@ -2850,14 +2850,14 @@ Para cada questão com baixo % de acertos:
             : lastMessage.content.text.value || "";
         }
       }
-      
+
       // Se ainda não encontrou, tentar outros campos
       if (!analiseTexto && lastMessage.text) {
         analiseTexto = typeof lastMessage.text === "string"
           ? lastMessage.text
           : lastMessage.text.value || "";
       }
-      
+
       // Log para debug se não encontrar
       if (!analiseTexto || analiseTexto.trim().length === 0) {
         console.error("[Analise ENEM TRI] Estrutura da mensagem:", JSON.stringify(lastMessage, null, 2));
@@ -2867,7 +2867,7 @@ Para cada questão com baixo % de acertos:
       if (!analiseTexto || analiseTexto.trim().length === 0) {
         throw new Error("Resposta da IA não contém análise");
       }
-      
+
       res.json({
         success: true,
         analysis: analiseTexto.trim(), // Frontend espera 'analysis'
@@ -3060,9 +3060,9 @@ Para cada disciplina:
   // ============================================================================
   // ENDPOINTS DE HISTÓRICO DE AVALIAÇÕES
   // ============================================================================
-  
+
   const AVALIACOES_FILE = path.join(process.cwd(), "data", "avaliacoes.json");
-  
+
   // Garantir que o diretório existe
   async function ensureAvaliacoesFile() {
     const dir = path.dirname(AVALIACOES_FILE);
@@ -4265,7 +4265,7 @@ Para cada disciplina:
     }
   });
 
-// GET /api/admin/export-credentials - Exportar credenciais dos alunos
+  // GET /api/admin/export-credentials - Exportar credenciais dos alunos
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/export-credentials", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -7323,13 +7323,25 @@ Para cada disciplina:
   // ============================================================================
 
   // GET /api/schools - Lista todas as escolas
-  // PROTEGIDO: Apenas super_admin pode listar escolas
-  app.get("/api/schools", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+  // PROTEGIDO: super_admin vê todas, school_admin vê a sua
+  app.get("/api/schools", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      const { data, error } = await supabaseAdmin
+      const profile = (req as AuthenticatedRequest).profile;
+
+      let query = supabaseAdmin
         .from("schools")
         .select("*")
         .order("name");
+
+      // Se for school_admin, filtrar apenas a sua escola
+      if (profile?.role === 'school_admin') {
+        if (!profile.school_id) {
+          return res.json({ success: true, schools: [] });
+        }
+        query = query.eq('id', profile.school_id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -7477,7 +7489,7 @@ Para cada disciplina:
       if (students && students.length > 0) {
         for (const student of students) {
           // Deletar Auth user (ignora erro se não existir)
-          await supabaseAdmin.auth.admin.deleteUser(student.id).catch(() => {});
+          await supabaseAdmin.auth.admin.deleteUser(student.id).catch(() => { });
         }
 
         // Deletar profiles
