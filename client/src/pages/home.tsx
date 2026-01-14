@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Link } from "wouter";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings, Building2 } from "lucide-react";
+import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings, Building2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, ScatterChart, Scatter, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
@@ -416,16 +416,7 @@ export default function Home() {
   const [customValidAnswers, setCustomValidAnswers] = useState<string>("A,B,C,D,E");
   const [escolaAlternativesCount, setEscolaAlternativesCount] = useState<number>(5); // 4 = A-D, 5 = A-E para modo escola
   const [enableOcr, setEnableOcr] = useState<boolean>(true); // GPT Vision OCR ativado por padrão
-  
-  // PDF Generation from CSV
-  const [mainTab, setMainTab] = useState<"process" | "generate">("process");
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvPreview, setCsvPreview] = useState<{ nome: string; turma: string; matricula: string }[]>([]);
-  const [csvTotalStudents, setCsvTotalStudents] = useState<number>(0);
-  const [csvLoading, setCsvLoading] = useState<boolean>(false);
-  const [pdfGenerating, setPdfGenerating] = useState<boolean>(false);
-  const csvInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Sistema de Projetos - Persistência
   interface Projeto {
     id: string;
@@ -5732,149 +5723,6 @@ export default function Home() {
     setAnswerKey(newKey);
   };
 
-  // CSV/PDF Generation functions
-  const handleCsvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    setCsvLoading(true);
-    setCsvFile(file);
-    
-    try {
-      const formData = new FormData();
-      formData.append("csv", file);
-      
-      const response = await authFetch(uploadUrl("/api/preview-csv"), {
-        method: "POST",
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || "Erro ao processar CSV");
-      }
-      
-      const data = await response.json();
-      setCsvPreview(data.preview || []);
-      setCsvTotalStudents(data.totalStudents || 0);
-      
-      toast({
-        title: "CSV carregado",
-        description: `${data.totalStudents} alunos encontrados.`,
-      });
-    } catch (error) {
-      console.error("Error loading CSV:", error);
-      setCsvFile(null);
-      setCsvPreview([]);
-      setCsvTotalStudents(0);
-      toast({
-        title: "Erro ao carregar CSV",
-        description: error instanceof Error ? error.message : "Verifique o formato do arquivo.",
-        variant: "destructive",
-      });
-    } finally {
-      setCsvLoading(false);
-    }
-  };
-  
-  // State for download links when generating large batches
-  const [downloadLinks, setDownloadLinks] = useState<{ name: string; downloadUrl: string; pages: number }[]>([]);
-  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  
-  const handleGeneratePdfs = async () => {
-    if (!csvFile) return;
-    
-    setPdfGenerating(true);
-    setDownloadLinks([]);
-    
-    try {
-      const formData = new FormData();
-      formData.append("csv", csvFile);
-      
-      // Use AbortController with 5-minute timeout for large files
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-      
-      const response = await authFetch(uploadUrl("/api/generate-pdfs"), {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || "Erro ao gerar PDFs");
-      }
-      
-      // Always JSON response with server URLs
-      const data = await response.json();
-      setDownloadLinks(data.files);
-      setShowDownloadDialog(true);
-      
-      toast({
-        title: "PDFs gerados com sucesso!",
-        description: `${data.totalStudents} gabaritos foram criados. Clique para baixar.`,
-      });
-    } catch (error) {
-      console.error("Error generating PDFs:", error);
-      toast({
-        title: "Erro ao gerar PDFs",
-        description: error instanceof Error ? error.message : "Tente novamente.",
-        variant: "destructive",
-      });
-    } finally {
-      setPdfGenerating(false);
-    }
-  };
-  
-  const handleDownloadFile = async (url: string, filename: string) => {
-    try {
-      let blobUrl = url;
-      
-      // If it's not already a blob URL, fetch and create one
-      if (!url.startsWith("blob:")) {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        blobUrl = window.URL.createObjectURL(blob);
-      }
-      
-      // Create download link
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Cleanup
-      setTimeout(() => {
-        document.body.removeChild(a);
-        // Only revoke if we created the blob URL
-        if (!url.startsWith("blob:")) {
-          window.URL.revokeObjectURL(blobUrl);
-        }
-      }, 100);
-    } catch (error) {
-      console.error("Download error:", error);
-      toast({
-        title: "Erro no download",
-        description: "Não foi possível baixar o arquivo.",
-        variant: "destructive",
-      });
-    }
-  };
-  
-  const handleClearCsv = () => {
-    setCsvFile(null);
-    setCsvPreview([]);
-    setCsvTotalStudents(0);
-    if (csvInputRef.current) {
-      csvInputRef.current.value = "";
-    }
-  };
-
   // =====================================================================
   // TELA DE SELEÇÃO DE MODO (PROVAS DA ESCOLA vs ENEM)
   // =====================================================================
@@ -6786,22 +6634,9 @@ export default function Home() {
       <main className="flex-1 max-w-full mx-auto px-6 py-8">
         {!file && !isBatchMode && status === "idle" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Coluna Esquerda: Tabs de Processar/Gerar */}
+            {/* Coluna Esquerda: Upload de Gabaritos */}
             <div className="lg:col-span-2 space-y-6">
-              <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as "process" | "generate")} className="w-full">
-              <TabsList className="grid w-full max-w-lg mx-auto grid-cols-2 bg-slate-100 dark:bg-slate-800">
-                <TabsTrigger value="process" data-testid="tab-process" className="data-[state=active]:bg-white data-[state=active]:text-primary dark:data-[state=active]:bg-slate-700">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Processar Gabaritos
-                </TabsTrigger>
-                <TabsTrigger value="generate" data-testid="tab-generate" className="data-[state=active]:bg-white data-[state=active]:text-primary dark:data-[state=active]:bg-slate-700">
-                  <Users className="h-4 w-4 mr-2" />
-                  Gerar Gabaritos
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="process" className="mt-6">
-                <Card className="border-dashed border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 h-full">
+              <Card className="border-dashed border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 h-full">
                   <CardContent className="p-0 h-full">
                     <div
                       {...getRootProps()}
@@ -6860,158 +6695,8 @@ export default function Home() {
                     </div>
                   </CardContent>
                 </Card>
-              </TabsContent>
-              
-              <TabsContent value="generate" className="mt-6">
-                <Card>
-                  <CardHeader className="text-center">
-                    <CardTitle className="flex items-center justify-center gap-2 text-slate-800 dark:text-slate-100">
-                      <FileSpreadsheet className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                      Gerar Gabaritos Personalizados
-                    </CardTitle>
-                    <CardDescription className="text-slate-600 dark:text-slate-400">
-                      Faça upload de um CSV com os dados dos alunos para gerar gabaritos com nome, turma e matrícula já preenchidos
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {!csvFile ? (
-                      <div className="border-2 border-dashed rounded-lg p-8 text-center">
-                        <input
-                          ref={csvInputRef}
-                          type="file"
-                          accept=".csv,text/csv,application/vnd.ms-excel"
-                          onChange={handleCsvUpload}
-                          className="hidden"
-                          id="csv-upload"
-                          data-testid="input-csv-upload"
-                        />
-                        <label
-                          htmlFor="csv-upload"
-                          className="cursor-pointer flex flex-col items-center"
-                        >
-                          <div className="p-4 rounded-full bg-muted mb-4">
-                            {csvLoading ? (
-                              <Loader2 className="h-10 w-10 text-primary animate-spin" />
-                            ) : (
-                              <FileUp className="h-10 w-10 text-muted-foreground" />
-                            )}
-                          </div>
-                          <p className="text-lg font-medium mb-2">
-                            {csvLoading ? "Processando..." : "Clique para selecionar o arquivo CSV"}
-                          </p>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Formato esperado: NOME;TURMA;MATRICULA
-                          </p>
-                          <div className="flex gap-2 flex-wrap justify-center">
-                            <Badge variant="outline" className="text-xs">
-                              Separador: ; ou ,
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              Codificação UTF-8
-                            </Badge>
-                          </div>
-                        </label>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-md bg-primary/10">
-                              <FileText className="h-5 w-5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="font-medium">{csvFile.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {csvTotalStudents} alunos encontrados
-                              </p>
-                            </div>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={handleClearCsv} data-testid="button-clear-csv">
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        
-                        {csvPreview.length > 0 && (
-                          <div>
-                            <p className="text-sm font-medium mb-2 flex items-center gap-2">
-                              <Eye className="h-4 w-4" />
-                              Preview (primeiros {Math.min(10, csvPreview.length)} alunos)
-                            </p>
-                            <div className="border rounded-lg overflow-hidden">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="bg-muted/50">
-                                    <TableHead className="text-xs font-semibold">#</TableHead>
-                                    <TableHead className="text-xs font-semibold">Nome</TableHead>
-                                    <TableHead className="text-xs font-semibold">Turma</TableHead>
-                                    <TableHead className="text-xs font-semibold">Matrícula</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {csvPreview.map((student, idx) => (
-                                    <TableRow key={idx} data-testid={`row-csv-preview-${idx}`}>
-                                      <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                                      <TableCell className="font-medium">{student.nome}</TableCell>
-                                      <TableCell>{student.turma || "-"}</TableCell>
-                                      <TableCell className="font-mono">{student.matricula || "-"}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                            {csvTotalStudents > 10 && (
-                              <p className="text-xs text-muted-foreground mt-2 text-center">
-                                ... e mais {csvTotalStudents - 10} alunos
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        
-                        <div className="bg-muted/30 p-4 rounded-lg space-y-2">
-                          <p className="text-sm font-medium">Os gabaritos serão gerados com:</p>
-                          <ul className="text-sm text-muted-foreground space-y-1 ml-4">
-                            <li className="flex items-center gap-2">
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              Nome do aluno no campo "NOME"
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              Turma no campo "TURMA"
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              Matrícula no campo "NÚMERO"
-                            </li>
-                          </ul>
-                        </div>
-                        
-                        <Button
-                          className="w-full"
-                          size="lg"
-                          onClick={handleGeneratePdfs}
-                          disabled={pdfGenerating}
-                          data-testid="button-generate-pdfs"
-                        >
-                          {pdfGenerating ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Gerando {csvTotalStudents} gabaritos...
-                            </>
-                          ) : (
-                            <>
-                              <Download className="h-4 w-4 mr-2" />
-                              Gerar e Baixar PDF ({csvTotalStudents} páginas)
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
             </div>
-            
+
             {/* Coluna Direita: Histórico de Avaliações */}
             <div className="lg:col-span-1 flex items-start pt-[72px]">
               <Card className="bg-white dark:bg-slate-900 shadow-sm w-full border-2 border-purple-200 dark:border-purple-800 flex flex-col h-full min-h-[256px]">
@@ -7171,89 +6856,6 @@ export default function Home() {
           </div>
         )}
 
-
-        {/* Dialog for multiple PDF downloads */}
-        <Dialog open={showDownloadDialog} onOpenChange={setShowDownloadDialog}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5 text-primary" />
-                PDFs Gerados
-              </DialogTitle>
-              <DialogDescription>
-                Os gabaritos foram divididos em {downloadLinks.length} arquivos para facilitar o download.
-                Clique em cada um para baixar.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {downloadLinks.map((file, idx) => (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  className="w-full justify-between"
-                  onClick={async () => {
-                    try {
-                      toast({
-                        title: "Baixando...",
-                        description: "Aguarde o download do arquivo.",
-                      });
-                      
-                      // Fetch the PDF as blob (works in sandbox)
-                      const response = await fetch(file.downloadUrl, {
-                        credentials: "same-origin",
-                      });
-                      
-                      if (!response.ok) {
-                        throw new Error("Falha ao baixar arquivo");
-                      }
-                      
-                      const blob = await response.blob();
-                      const blobUrl = URL.createObjectURL(blob);
-                      
-                      // Create and click download link (no navigation)
-                      const link = document.createElement("a");
-                      link.href = blobUrl;
-                      link.download = file.name;
-                      link.style.display = "none";
-                      document.body.appendChild(link);
-                      link.click();
-                      
-                      // Cleanup
-                      setTimeout(() => {
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(blobUrl);
-                      }, 100);
-                      
-                      toast({
-                        title: "Download concluído!",
-                        description: file.name,
-                      });
-                    } catch (error) {
-                      console.error("Download error:", error);
-                      toast({
-                        title: "Erro no download",
-                        description: "Tente gerar o PDF novamente.",
-                        variant: "destructive",
-                      });
-                    }
-                  }}
-                  data-testid={`button-download-part-${idx}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    {file.name}
-                  </span>
-                  <Badge variant="secondary">{file.pages} págs</Badge>
-                </Button>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="ghost" onClick={() => setShowDownloadDialog(false)}>
-                Fechar
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {isBatchMode && status !== "processing" && (
           <div className="space-y-6">
