@@ -4172,9 +4172,9 @@ Para cada disciplina:
   });
 
   // POST /api/admin/migrate-students-to-auth - Migrar alunos existentes para Auth
-  // 🔒 PROTECTED: Requer autenticação + role super_admin
+  // 🔒 PROTECTED: Requer autenticação + role admin
   // ✅ 2025-01-14 - Cria contas Auth para alunos com profile_id = NULL
-  app.post("/api/admin/migrate-students-to-auth", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+  app.post("/api/admin/migrate-students-to-auth", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     const DEFAULT_PASSWORD = 'escola123';
     const BATCH_SIZE = 5;
     const BATCH_DELAY_MS = 1000;
@@ -6139,25 +6139,63 @@ Para cada disciplina:
   });
 
   // GET /api/profile/:userId - Buscar profile de um usuário (bypass RLS)
+  // ✅ v2 - 2025-01-14 - Auto-cria profile se usuário Auth existe mas profile não
   app.get("/api/profile/:userId", async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
 
+      // Primeiro tentar buscar o profile existente
       const { data, error } = await supabaseAdmin
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
-      if (error) {
-        console.error("[PROFILE] Erro ao buscar:", error);
+      if (data) {
+        return res.json(data);
+      }
+
+      // Profile não existe - verificar se Auth user existe
+      console.log(`[PROFILE] Profile não encontrado para ${userId}, verificando Auth...`);
+
+      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
+
+      if (authError || !authUser?.user) {
+        console.error("[PROFILE] Auth user também não existe:", authError);
         return res.status(404).json({
-          error: "Profile não encontrado",
-          details: error.message
+          error: "Usuário não encontrado",
+          details: "Nem profile nem Auth user existem"
         });
       }
 
-      res.json(data);
+      // Auth user existe - criar profile automaticamente
+      console.log(`[PROFILE] Auth user encontrado (${authUser.user.email}), criando profile...`);
+
+      const userEmail = authUser.user.email || '';
+      const userName = authUser.user.user_metadata?.name || userEmail.split('@')[0];
+      const userRole = authUser.user.user_metadata?.role || 'school_admin';
+
+      const { data: newProfile, error: insertError } = await supabaseAdmin
+        .from("profiles")
+        .insert({
+          id: userId,
+          email: userEmail,
+          name: userName,
+          role: userRole
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("[PROFILE] Erro ao criar profile:", insertError);
+        return res.status(500).json({
+          error: "Erro ao criar profile",
+          details: insertError.message
+        });
+      }
+
+      console.log(`[PROFILE] ✅ Profile criado para ${userEmail} (${userRole})`);
+      res.json(newProfile);
 
     } catch (error: any) {
       console.error("[PROFILE] Erro:", error);
