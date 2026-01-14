@@ -7998,7 +7998,7 @@ Para cada disciplina:
         return res.status(404).json({ error: "Coordenador não encontrado" });
       }
 
-      // Delete profile first (in case cascade doesn't work)
+      // Delete profile first (this is what matters for the application)
       const { error: profileError } = await supabaseAdmin
         .from("profiles")
         .delete()
@@ -8006,14 +8006,15 @@ Para cada disciplina:
 
       if (profileError) {
         console.error("[COORDINATOR] Profile delete error:", profileError);
+        return res.status(500).json({ error: "Erro ao excluir coordenador do banco" });
       }
 
-      // Delete auth user
+      // Try to delete auth user (may fail if already deleted or inconsistent)
       const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
 
       if (authError) {
-        console.error("[COORDINATOR] Auth delete error:", authError);
-        return res.status(500).json({ error: "Erro ao excluir coordenador" });
+        // Log warning but don't fail - profile was already deleted successfully
+        console.warn("[COORDINATOR] Auth delete warning (profile already deleted):", authError.message);
       }
 
       console.log("[COORDINATOR] Deleted coordinator:", id);
