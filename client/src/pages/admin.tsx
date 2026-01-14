@@ -1228,9 +1228,10 @@ export default function AdminPage() {
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
+              <img src="/favicon.png" alt="XTRI" className="h-10 w-10 object-contain" />
               <div>
                 <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                  XTRI GABARITOS Admin
+                  XTRI<span className="text-[#F26A4B]">.</span> Admin
                 </h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Painel Administrativo

@@ -179,6 +179,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <ChangePasswordModal
           open={showForceChangePassword}
           onSuccess={handleForcePasswordChangeSuccess}
+          onLogout={async () => {
+            setShowForceChangePassword(false);
+            await signOut();
+          }}
           isForced={true}
           userId={profile.id}
         />

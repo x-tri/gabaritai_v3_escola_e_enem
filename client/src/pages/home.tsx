@@ -5756,16 +5756,12 @@ export default function Home() {
         {/* Logo */}
         <div className="p-6 border-b border-blue-700">
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="relative p-2 rounded-lg bg-white/10 backdrop-blur-sm">
-                <FileSpreadsheet className="h-5 w-5 text-white" />
-              </div>
-            </div>
+            <img src="/favicon.png" alt="XTRI" className="h-10 w-10 object-contain" />
             <div className="flex flex-col">
               <h2 className="text-lg font-bold text-white tracking-tight">
-                XTRI GABARITOS
+                XTRI<span className="text-[#F26A4B]">.</span>
               </h2>
-              <p className="text-xs font-semibold text-blue-100 uppercase tracking-wider">Sistema de Correção de Gabaritos</p>
+              <p className="text-xs font-semibold text-blue-100 uppercase tracking-wider">Gabaritos Inteligentes</p>
             </div>
           </div>
         </div>

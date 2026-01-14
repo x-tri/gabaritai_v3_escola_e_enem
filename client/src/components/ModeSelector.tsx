@@ -212,11 +212,14 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
       <div className="max-w-4xl w-full">
         {/* Header */}
         <div className="text-center mb-12">
+          <div className="flex justify-center mb-4">
+            <img src="/favicon.png" alt="XTRI" className="w-16 h-16 object-contain" />
+          </div>
           <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-            XTRI GABARITOS
+            XTRI<span className="text-[#F26A4B]">.</span>
           </h1>
-          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-6">
-            Sistema de Correção de Gabaritos
+          <p className="text-xs font-semibold text-[#33B5E5] uppercase tracking-wider mb-6">
+            Gabaritos Inteligentes
           </p>
           <p className="text-lg text-slate-600 dark:text-slate-400">
             Selecione o modo de trabalho

@@ -52,11 +52,9 @@ export function TopNavbar({ items, activeItem, onItemClick, className }: TopNavb
                 <span className="sr-only">Abrir menu</span>
               </Button>
               <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                  <span className="text-primary-foreground font-bold text-sm">G</span>
-                </div>
+                <img src="/favicon.png" alt="XTRI" className="h-8 w-8 object-contain" />
                 <span className="font-bold text-xl text-slate-900 dark:text-slate-100 hidden sm:block">
-                  GabaritAI
+                  XTRI
                 </span>
               </div>
             </div>

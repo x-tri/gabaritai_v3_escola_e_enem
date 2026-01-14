@@ -10,11 +10,12 @@ interface ChangePasswordModalProps {
   open: boolean;
   onClose?: () => void;
   onSuccess: () => void;
-  isForced?: boolean; // Se true, não pode fechar o modal
+  onLogout?: () => void; // Para "fazer depois" - faz logout
+  isForced?: boolean; // Se true, não pode fechar o modal sem trocar senha ou fazer logout
   userId: string;
 }
 
-export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false, userId }: ChangePasswordModalProps) {
+export function ChangePasswordModal({ open, onClose, onSuccess, onLogout, isForced = false, userId }: ChangePasswordModalProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -189,6 +190,11 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
             {!isForced && (
               <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
                 Cancelar
+              </Button>
+            )}
+            {isForced && onLogout && (
+              <Button type="button" variant="ghost" onClick={onLogout} disabled={isLoading}>
+                Sair e fazer depois
               </Button>
             )}
             <Button type="submit" disabled={isLoading}>

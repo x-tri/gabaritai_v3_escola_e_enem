@@ -3935,7 +3935,7 @@ Para cada disciplina:
               throw new Error(`Erro ao criar conta Auth: ${authError.message}`);
             }
 
-            // Criar profile
+            // Criar profile (must_change_password está no user_metadata do Auth)
             const { error: profileError } = await supabaseAdmin.from('profiles').insert({
               id: authUser.user.id,
               email,
@@ -3943,8 +3943,7 @@ Para cada disciplina:
               role: 'student',
               school_id: schoolId,
               student_number: matricula,
-              turma: turma || null,
-              must_change_password: true
+              turma: turma || null
             });
 
             if (profileError) {
@@ -4261,52 +4260,66 @@ Para cada disciplina:
               continue;
             }
 
-            // Criar usuário no Supabase Auth
-            const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-              email,
-              password: DEFAULT_PASSWORD,
-              email_confirm: true,
-              user_metadata: {
-                must_change_password: true,
-                name: student.name,
-                role: 'student'
-              }
-            });
+            // Verificar se Auth user já existe (pode ter ficado de uma migração anterior)
+            const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
+            const existingAuthUser = allUsers?.users?.find(u => u.email === email);
 
-            if (authError) {
-              throw new Error(`Auth: ${authError.message}`);
+            let authUserId: string;
+
+            if (existingAuthUser) {
+              // Auth user já existe - apenas usar o ID
+              authUserId = existingAuthUser.id;
+              console.log(`[MIGRATE] Auth user ${email} já existe, usando ID: ${authUserId}`);
+            } else {
+              // Criar usuário no Supabase Auth
+              const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                email,
+                password: DEFAULT_PASSWORD,
+                email_confirm: true,
+                user_metadata: {
+                  must_change_password: true,
+                  name: student.name,
+                  role: 'student'
+                }
+              });
+
+              if (authError) {
+                throw new Error(`Auth: ${authError.message}`);
+              }
+              authUserId = authUser.user.id;
             }
 
-            // Criar profile
+            // Criar/atualizar profile (upsert para evitar conflito)
             const { error: profileError } = await supabaseAdmin
               .from('profiles')
-              .insert({
-                id: authUser.user.id,
+              .upsert({
+                id: authUserId,
                 email,
                 name: student.name,
                 role: 'student',
                 school_id: student.school_id,
                 student_number: student.matricula,
-                turma: student.turma,
-                must_change_password: true
-              });
+                turma: student.turma
+              }, { onConflict: 'id' });
 
             if (profileError) {
-              // Rollback: deletar Auth user
-              await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+              // Só faz rollback se criamos o Auth user agora
+              if (!existingAuthUser) {
+                await supabaseAdmin.auth.admin.deleteUser(authUserId);
+              }
               throw new Error(`Profile: ${profileError.message}`);
             }
 
             // Linkar profile_id no students
             await supabaseAdmin
               .from('students')
-              .update({ profile_id: authUser.user.id })
+              .update({ profile_id: authUserId })
               .eq('id', student.id);
 
             results.push({
               matricula: student.matricula,
               nome: student.name,
-              status: 'created',
+              status: existingAuthUser ? 'linked' : 'created',
               email
             });
             migrated++;
@@ -4471,11 +4484,7 @@ Para cada disciplina:
           throw new Error(`Erro ao resetar senha: ${authError.message}`);
         }
 
-        // Atualizar flag no profiles também
-        await supabaseAdmin
-          .from('profiles')
-          .update({ must_change_password: true })
-          .eq('id', id);
+        // must_change_password está no user_metadata do Auth (não na tabela profiles)
 
         console.log(`[RESET] Senha resetada para ${profile.name} (${profile.student_number})`);
 
@@ -4519,10 +4528,7 @@ Para cada disciplina:
           throw new Error(`Erro ao resetar senha: ${authError.message}`);
         }
 
-        await supabaseAdmin
-          .from('profiles')
-          .update({ must_change_password: true })
-          .eq('id', student.profile_id);
+        // must_change_password está no user_metadata do Auth (não na tabela profiles)
 
         console.log(`[RESET] Senha resetada para ${student.nome} (${student.matricula}) via profile_id`);
 
@@ -4563,7 +4569,7 @@ Para cada disciplina:
         throw new Error(`Erro ao criar conta Auth: ${authCreateError.message}`);
       }
 
-      // Criar profile para o usuário
+      // Criar profile para o usuário (must_change_password está no user_metadata do Auth)
       const { data: newProfile, error: profileError } = await supabaseAdmin
         .from('profiles')
         .insert({
@@ -4572,8 +4578,7 @@ Para cada disciplina:
           name: student.nome,
           role: 'student',
           escola_id: student.escola_id,
-          student_number: student.matricula,
-          must_change_password: true
+          student_number: student.matricula
         })
         .select()
         .single();
@@ -4728,11 +4733,7 @@ Para cada disciplina:
         throw new Error(`Erro ao resetar senha: ${authError.message}`);
       }
 
-      // Atualizar flag no profiles também
-      await supabaseAdmin
-        .from('profiles')
-        .update({ must_change_password: true })
-        .eq('id', studentId);
+      // must_change_password está no user_metadata do Auth (não na tabela profiles)
 
       console.log(`[RESET-PWD] Senha resetada para aluno ${studentId}`);
 
@@ -5322,6 +5323,8 @@ Para cada disciplina:
     try {
       const { studentId } = req.params;
 
+      console.log(`[STUDENT_ANSWERS] Buscando resultados para studentId: ${studentId}`);
+
       // Tentar buscar por student_id primeiro
       let { data, error } = await supabaseAdmin
         .from("student_answers")
@@ -5340,6 +5343,8 @@ Para cada disciplina:
         });
       }
 
+      console.log(`[STUDENT_ANSWERS] Resultados por student_id: ${data?.length || 0}`);
+
       // Se não encontrou por student_id, tentar por student_number
       if (!data || data.length === 0) {
         console.log(`[STUDENT_ANSWERS] Sem resultados por student_id, buscando por student_number...`);
@@ -5347,12 +5352,15 @@ Para cada disciplina:
         // Buscar profile para pegar student_number
         const { data: profile } = await supabaseAdmin
           .from("profiles")
-          .select("student_number")
+          .select("student_number, school_id, name")
           .eq("id", studentId)
           .single();
 
+        console.log(`[STUDENT_ANSWERS] Profile encontrado:`, profile);
+
         if (profile?.student_number) {
-          const { data: resultsByNumber } = await supabaseAdmin
+          // Buscar por student_number (como string)
+          const { data: resultsByNumber, error: errorByNumber } = await supabaseAdmin
             .from("student_answers")
             .select(`
               *,
@@ -5361,9 +5369,21 @@ Para cada disciplina:
             .eq("student_number", profile.student_number)
             .order("created_at", { ascending: false });
 
+          console.log(`[STUDENT_ANSWERS] Busca por student_number ${profile.student_number}:`, {
+            resultados: resultsByNumber?.length || 0,
+            erro: errorByNumber?.message
+          });
+
           if (resultsByNumber && resultsByNumber.length > 0) {
             data = resultsByNumber;
             console.log(`[STUDENT_ANSWERS] Encontrados ${data.length} resultados por student_number: ${profile.student_number}`);
+          } else {
+            // Debug: verificar se existem registros com student_number similar
+            const { data: allAnswers } = await supabaseAdmin
+              .from("student_answers")
+              .select("id, student_number, student_name, school_id")
+              .limit(10);
+            console.log(`[STUDENT_ANSWERS] DEBUG - Amostra de registros na tabela:`, allAnswers);
           }
         }
       }
@@ -5380,6 +5400,143 @@ Para cada disciplina:
         error: "Erro ao buscar resultados do aluno",
         details: error.message
       });
+    }
+  });
+
+  // GET /api/debug/student-answers-by-school/:schoolId - Debug: listar respostas de uma escola
+  app.get("/api/debug/student-answers-by-school/:schoolId", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { schoolId } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_id,
+          student_number,
+          student_name,
+          school_id,
+          exam_id,
+          exams (id, title)
+        `)
+        .eq("school_id", schoolId)
+        .limit(50);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({
+        success: true,
+        count: data?.length || 0,
+        data
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/admin/relink-student-answers - Re-vincular student_id em student_answers existentes
+  // Isso é necessário quando correções foram feitas ANTES da migração de alunos para Auth
+  app.post("/api/admin/relink-student-answers", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { school_id, dry_run = true } = req.body;
+
+      console.log(`[RELINK] Iniciando re-vinculação de student_answers ${dry_run ? '(DRY RUN)' : '(REAL)'}`);
+
+      // 1. Buscar todos os student_answers sem student_id (ou com student_id errado)
+      let query = supabaseAdmin
+        .from("student_answers")
+        .select("id, student_number, student_name, student_id, school_id")
+        .is("student_id", null)
+        .not("student_number", "is", null);
+
+      if (school_id) {
+        query = query.eq("school_id", school_id);
+      }
+
+      const { data: answersWithoutLink, error: fetchError } = await query;
+
+      if (fetchError) {
+        return res.status(500).json({ error: fetchError.message });
+      }
+
+      console.log(`[RELINK] Encontrados ${answersWithoutLink?.length || 0} registros sem student_id`);
+
+      if (!answersWithoutLink || answersWithoutLink.length === 0) {
+        return res.json({
+          success: true,
+          message: "Nenhum registro precisa ser atualizado",
+          updated: 0
+        });
+      }
+
+      // 2. Buscar todos os profiles com student_number
+      const studentNumbers = answersWithoutLink.map(a => a.student_number).filter(Boolean) as string[];
+      const uniqueNumbers = [...new Set(studentNumbers)];
+
+      const { data: profiles } = await supabaseAdmin
+        .from("profiles")
+        .select("id, student_number")
+        .in("student_number", uniqueNumbers);
+
+      const profileMap = new Map<string, string>();
+      profiles?.forEach(p => {
+        if (p.student_number) {
+          profileMap.set(p.student_number, p.id);
+        }
+      });
+
+      console.log(`[RELINK] Encontrados ${profileMap.size} profiles com student_number correspondente`);
+
+      // 3. Atualizar os registros
+      let updated = 0;
+      let notFound = 0;
+      const updates: { id: string; student_number: string; student_id: string }[] = [];
+
+      for (const answer of answersWithoutLink) {
+        if (!answer.student_number) continue;
+
+        const profileId = profileMap.get(answer.student_number);
+        if (profileId) {
+          updates.push({
+            id: answer.id,
+            student_number: answer.student_number,
+            student_id: profileId
+          });
+        } else {
+          notFound++;
+        }
+      }
+
+      if (!dry_run && updates.length > 0) {
+        // Fazer update em batch
+        for (const update of updates) {
+          const { error: updateError } = await supabaseAdmin
+            .from("student_answers")
+            .update({ student_id: update.student_id })
+            .eq("id", update.id);
+
+          if (!updateError) {
+            updated++;
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        dry_run,
+        message: dry_run
+          ? `DRY RUN: ${updates.length} registros seriam atualizados, ${notFound} sem perfil correspondente`
+          : `${updated} registros atualizados, ${notFound} sem perfil correspondente`,
+        would_update: updates.length,
+        not_found: notFound,
+        updates: dry_run ? updates : undefined
+      });
+
+    } catch (error: any) {
+      console.error("[RELINK] Erro:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
@@ -6139,7 +6296,7 @@ Para cada disciplina:
   });
 
   // GET /api/profile/:userId - Buscar profile de um usuário (bypass RLS)
-  // ✅ v2 - 2025-01-14 - Auto-cria profile se usuário Auth existe mas profile não
+  // ✅ v3 - 2025-01-14 - Auto-cria profile + retorna must_change_password do Auth user_metadata
   app.get("/api/profile/:userId", async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
@@ -6152,7 +6309,14 @@ Para cada disciplina:
         .single();
 
       if (data) {
-        return res.json(data);
+        // Buscar must_change_password do Auth user_metadata
+        const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+        const mustChangePassword = authUser?.user?.user_metadata?.must_change_password === true;
+
+        return res.json({
+          ...data,
+          must_change_password: mustChangePassword
+        });
       }
 
       // Profile não existe - verificar se Auth user existe
@@ -6195,7 +6359,13 @@ Para cada disciplina:
       }
 
       console.log(`[PROFILE] ✅ Profile criado para ${userEmail} (${userRole})`);
-      res.json(newProfile);
+
+      // Incluir must_change_password do Auth user_metadata
+      const mustChangePassword = authUser.user?.user_metadata?.must_change_password === true;
+      res.json({
+        ...newProfile,
+        must_change_password: mustChangePassword
+      });
 
     } catch (error: any) {
       console.error("[PROFILE] Erro:", error);
@@ -6333,11 +6503,10 @@ Para cada disciplina:
         return res.status(500).json({ error: "Erro ao alterar senha", details: updateError.message });
       }
 
-      // Marcar must_change_password como false
-      await supabaseAdmin
-        .from("profiles")
-        .update({ must_change_password: false })
-        .eq("id", userId);
+      // Marcar must_change_password como false no Auth user_metadata
+      await supabaseAdmin.auth.admin.updateUserById(userId, {
+        user_metadata: { must_change_password: false }
+      });
 
       res.json({ success: true, message: "Senha alterada com sucesso" });
 
@@ -6355,11 +6524,15 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
   app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      const allowedSeries = (req as any).profile?.allowed_series || null;
-      console.log(`[ESCOLA RESULTS] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const userSchoolId = profile?.school_id;
+      const userRole = profile?.role;
+
+      console.log(`[ESCOLA RESULTS] User: ${profile?.name}, Role: ${userRole}, School: ${userSchoolId}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
       // Buscar student_answers com info do exame
-      const { data: answers, error: answersError } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6375,10 +6548,19 @@ Para cada disciplina:
           tri_cn,
           tri_mt,
           created_at,
+          school_id,
           exams(title)
         `)
         .order("created_at", { ascending: false })
         .limit(500);
+
+      // Filtrar por school_id se for school_admin (não super_admin)
+      if (userRole === 'school_admin' && userSchoolId) {
+        query = query.eq("school_id", userSchoolId);
+        console.log(`[ESCOLA RESULTS] Filtrando por school_id: ${userSchoolId}`);
+      }
+
+      const { data: answers, error: answersError } = await query;
 
       if (answersError) {
         console.error("[ESCOLA] Erro ao buscar resultados:", answersError);
@@ -6451,11 +6633,15 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
   app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      const allowedSeries = (req as any).profile?.allowed_series || null;
-      console.log(`[ESCOLA DASHBOARD] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const userSchoolId = profile?.school_id;
+      const userRole = profile?.role;
+
+      console.log(`[ESCOLA DASHBOARD] User: ${profile?.name}, Role: ${userRole}, School: ${userSchoolId}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
       // Buscar todos os resultados
-      const { data: answers, error: answersError } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6468,9 +6654,18 @@ Para cada disciplina:
           tri_cn,
           tri_mt,
           created_at,
+          school_id,
           exams(title)
         `)
         .order("created_at", { ascending: false });
+
+      // Filtrar por school_id se for school_admin (não super_admin)
+      if (userRole === 'school_admin' && userSchoolId) {
+        query = query.eq("school_id", userSchoolId);
+        console.log(`[ESCOLA DASHBOARD] Filtrando por school_id: ${userSchoolId}`);
+      }
+
+      const { data: answers, error: answersError } = await query;
 
       if (answersError) throw answersError;
 
@@ -6642,7 +6837,10 @@ Para cada disciplina:
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
-      const allowedSeries = (req as any).profile?.allowed_series || null;
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const userSchoolId = profile?.school_id;
+      const userRole = profile?.role;
 
       // Verify coordinator has access to this turma
       if (!isTurmaAllowed(decodedTurma, allowedSeries)) {
@@ -6653,7 +6851,7 @@ Para cada disciplina:
       }
 
       // Buscar resultados da turma
-      const { data: answers, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6666,10 +6864,18 @@ Para cada disciplina:
           tri_cn,
           tri_mt,
           created_at,
+          school_id,
           exams(title)
         `)
         .eq("turma", decodedTurma)
         .order("correct_answers", { ascending: false });
+
+      // Filtrar por school_id se for school_admin
+      if (userRole === 'school_admin' && userSchoolId) {
+        query = query.eq("school_id", userSchoolId);
+      }
+
+      const { data: answers, error } = await query;
 
       if (error) throw error;
 
@@ -6748,7 +6954,10 @@ Para cada disciplina:
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
-      const allowedSeries = (req as any).profile?.allowed_series || null;
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const userSchoolId = profile?.school_id;
+      const userRole = profile?.role;
 
       // Verify coordinator has access to this turma
       if (!isTurmaAllowed(decodedTurma, allowedSeries)) {
@@ -6761,7 +6970,7 @@ Para cada disciplina:
       console.log(`[ESCOLA EXPORT EXCEL] Exportando turma: ${decodedTurma}`);
 
       // Buscar resultados da turma com todos os dados
-      const { data: answers, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6778,10 +6987,18 @@ Para cada disciplina:
           tri_mt,
           confidence,
           created_at,
+          school_id,
           exams(id, title, answer_key)
         `)
         .eq("turma", decodedTurma)
         .order("correct_answers", { ascending: false });
+
+      // Filtrar por school_id se for school_admin
+      if (userRole === 'school_admin' && userSchoolId) {
+        query = query.eq("school_id", userSchoolId);
+      }
+
+      const { data: answers, error } = await query;
 
       if (error) throw error;
 
@@ -6873,9 +7090,12 @@ Para cada disciplina:
     try {
       const { matricula } = req.params;
       const decodedMatricula = decodeURIComponent(matricula);
+      const profile = (req as any).profile;
+      const userSchoolId = profile?.school_id;
+      const userRole = profile?.role;
 
       // Buscar todas as provas do aluno
-      const { data: answers, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6890,10 +7110,18 @@ Para cada disciplina:
           tri_cn,
           tri_mt,
           created_at,
+          school_id,
           exams(title)
         `)
         .eq("student_number", decodedMatricula)
         .order("created_at", { ascending: true });
+
+      // Filtrar por school_id se for school_admin
+      if (userRole === 'school_admin' && userSchoolId) {
+        query = query.eq("school_id", userSchoolId);
+      }
+
+      const { data: answers, error } = await query;
 
       if (error) throw error;
 
@@ -6993,10 +7221,21 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin
   app.get("/api/escola/series", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      const { data: answers, error } = await supabaseAdmin
+      const profile = (req as any).profile;
+      const userSchoolId = profile?.school_id;
+      const userRole = profile?.role;
+
+      let query = supabaseAdmin
         .from("student_answers")
-        .select("turma")
+        .select("turma, school_id")
         .not("turma", "is", null);
+
+      // Filtrar por school_id se for school_admin
+      if (userRole === 'school_admin' && userSchoolId) {
+        query = query.eq("school_id", userSchoolId);
+      }
+
+      const { data: answers, error } = await query;
 
       if (error) throw error;
 

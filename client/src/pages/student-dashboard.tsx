@@ -615,9 +615,7 @@ export default function StudentDashboard() {
           <div className="flex items-center gap-4">
             {/* XTRI Logo */}
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg shadow-cyan-500/30">
-                <span className="text-white font-black text-sm">X</span>
-              </div>
+              <img src="/favicon.png" alt="XTRI" className="w-10 h-10 object-contain" />
               <span className="font-bold text-lg text-gray-900 dark:text-white hidden sm:block">XTRI</span>
             </div>
 
