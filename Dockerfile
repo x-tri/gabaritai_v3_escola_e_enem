@@ -86,6 +86,10 @@ COPY tri/ ./tri/
 COPY server/assets/ ./assets/
 RUN chmod -R 644 ./assets/* && chown -R expressjs:nodejs ./assets
 
+# Copiar templates de gabarito para geração de PDFs personalizados
+COPY attached_assets/ ./attached_assets/
+RUN chmod -R 644 ./attached_assets/* && chown -R expressjs:nodejs ./attached_assets
+
 # Criar diretório data para templates (PDF gerado dinamicamente)
 RUN mkdir -p ./data && chown -R expressjs:nodejs ./data
 
