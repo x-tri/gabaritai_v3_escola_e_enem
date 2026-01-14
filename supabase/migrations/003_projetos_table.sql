@@ -1,5 +1,5 @@
 -- ============================================================================
--- MIGRATION: Tabela de Projetos (persistência XTRI PROVAS)
+-- MIGRATION: Tabela de Projetos (persistência XTRI GABARITOS)
 -- ============================================================================
 
 -- Tabela para armazenar projetos de correção (Dia 1, Dia 2, mesclados)
