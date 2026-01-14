@@ -5915,9 +5915,9 @@ export default function Home() {
             </div>
             <div className="flex flex-col">
               <h2 className="text-lg font-bold text-white tracking-tight">
-                XTRI PROVAS
+                XTRI GABARITOS
               </h2>
-              <p className="text-xs font-semibold text-blue-100 uppercase tracking-wider">Sistema de Correção de Provas</p>
+              <p className="text-xs font-semibold text-blue-100 uppercase tracking-wider">Sistema de Correção de Gabaritos</p>
             </div>
           </div>
         </div>
