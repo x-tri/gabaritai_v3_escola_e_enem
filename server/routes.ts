@@ -4171,6 +4171,185 @@ Para cada disciplina:
     }
   });
 
+  // POST /api/admin/migrate-students-to-auth - Migrar alunos existentes para Auth
+  // 🔒 PROTECTED: Requer autenticação + role super_admin
+  // ✅ 2025-01-14 - Cria contas Auth para alunos com profile_id = NULL
+  app.post("/api/admin/migrate-students-to-auth", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'escola123';
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY_MS = 1000;
+
+    try {
+      const { schoolId, dryRun = false } = req.body as { schoolId?: string; dryRun?: boolean };
+
+      // Buscar alunos sem profile_id
+      let query = supabaseAdmin
+        .from('students')
+        .select('id, matricula, name, turma, school_id')
+        .is('profile_id', null);
+
+      if (schoolId) {
+        query = query.eq('school_id', schoolId);
+      }
+
+      const { data: students, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+
+      if (!students || students.length === 0) {
+        res.json({
+          success: true,
+          message: "Nenhum aluno para migrar",
+          total: 0,
+          migrated: 0,
+          errors: 0
+        });
+        return;
+      }
+
+      console.log(`[MIGRATE] ${dryRun ? '[DRY-RUN] ' : ''}Migrando ${students.length} aluno(s) para Auth...`);
+
+      if (dryRun) {
+        res.json({
+          success: true,
+          dryRun: true,
+          message: `${students.length} aluno(s) seriam migrados`,
+          total: students.length,
+          students: students.map(s => ({
+            matricula: s.matricula,
+            nome: s.name,
+            turma: s.turma,
+            email: `${s.matricula}@escola.gabaritai.com`
+          }))
+        });
+        return;
+      }
+
+      let migrated = 0;
+      let errors = 0;
+      const results: Array<{ matricula: string; nome: string; status: string; email?: string; error?: string }> = [];
+
+      // Processar em lotes
+      for (let i = 0; i < students.length; i += BATCH_SIZE) {
+        const batch = students.slice(i, i + BATCH_SIZE);
+
+        for (const student of batch) {
+          try {
+            const email = `${student.matricula}@escola.gabaritai.com`;
+
+            // Verificar se já existe profile com este email
+            const { data: existingProfile } = await supabaseAdmin
+              .from('profiles')
+              .select('id')
+              .eq('email', email)
+              .maybeSingle();
+
+            if (existingProfile) {
+              // Profile já existe - apenas linkar
+              await supabaseAdmin
+                .from('students')
+                .update({ profile_id: existingProfile.id })
+                .eq('id', student.id);
+
+              results.push({
+                matricula: student.matricula,
+                nome: student.name,
+                status: 'linked',
+                email
+              });
+              migrated++;
+              continue;
+            }
+
+            // Criar usuário no Supabase Auth
+            const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+              email,
+              password: DEFAULT_PASSWORD,
+              email_confirm: true,
+              user_metadata: {
+                must_change_password: true,
+                name: student.name,
+                role: 'student'
+              }
+            });
+
+            if (authError) {
+              throw new Error(`Auth: ${authError.message}`);
+            }
+
+            // Criar profile
+            const { error: profileError } = await supabaseAdmin
+              .from('profiles')
+              .insert({
+                id: authUser.user.id,
+                email,
+                name: student.name,
+                role: 'student',
+                school_id: student.school_id,
+                student_number: student.matricula,
+                turma: student.turma,
+                must_change_password: true
+              });
+
+            if (profileError) {
+              // Rollback: deletar Auth user
+              await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+              throw new Error(`Profile: ${profileError.message}`);
+            }
+
+            // Linkar profile_id no students
+            await supabaseAdmin
+              .from('students')
+              .update({ profile_id: authUser.user.id })
+              .eq('id', student.id);
+
+            results.push({
+              matricula: student.matricula,
+              nome: student.name,
+              status: 'created',
+              email
+            });
+            migrated++;
+
+          } catch (error: any) {
+            console.error(`[MIGRATE] Erro em ${student.matricula}:`, error.message);
+            results.push({
+              matricula: student.matricula,
+              nome: student.name,
+              status: 'error',
+              error: error.message
+            });
+            errors++;
+          }
+        }
+
+        // Delay entre lotes para não sobrecarregar a API
+        if (i + BATCH_SIZE < students.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+      }
+
+      console.log(`[MIGRATE] ✅ Concluído: ${migrated} migrados, ${errors} erros`);
+
+      res.json({
+        success: errors === 0,
+        message: `Migração concluída: ${migrated} de ${students.length} alunos`,
+        total: students.length,
+        migrated,
+        errors,
+        defaultPassword: DEFAULT_PASSWORD,
+        results
+      });
+
+    } catch (error: any) {
+      console.error("[MIGRATE] Erro:", error);
+      res.status(500).json({
+        error: "Erro na migração",
+        details: error.message
+      });
+    }
+  });
+
   // DELETE /api/admin/students/:id - Deletar aluno (cascade: Auth + profiles + students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   // ✅ v2 - 2025-01-14 - Cascade delete através de todas as tabelas
