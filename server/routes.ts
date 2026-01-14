@@ -6203,11 +6203,13 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
   app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      const allowedSeries = (req as any).profile?.allowed_series || null;
-      console.log(`[ESCOLA RESULTS] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const schoolId = profile?.school_id;
+      console.log(`[ESCOLA RESULTS] User: ${profile?.name}, School: ${schoolId}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
-      // Buscar student_answers com info do exame
-      const { data: answers, error: answersError } = await supabaseAdmin
+      // Buscar student_answers com info do exame (filtrado por escola para school_admin)
+      let answersQuery = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6227,6 +6229,13 @@ Para cada disciplina:
         `)
         .order("created_at", { ascending: false })
         .limit(500);
+
+      // Filtrar por school_id se não for super_admin ou se tiver school_id
+      if (profile?.role === 'school_admin' && schoolId) {
+        answersQuery = answersQuery.eq('school_id', schoolId);
+      }
+
+      const { data: answers, error: answersError } = await answersQuery;
 
       if (answersError) {
         console.error("[ESCOLA] Erro ao buscar resultados:", answersError);
@@ -6272,10 +6281,16 @@ Para cada disciplina:
       // Buscar total de alunos únicos
       const uniqueStudents = new Set(results.map((r: any) => r.student_number || r.student_name));
 
-      // Buscar total de provas
-      const { count: examCount } = await supabaseAdmin
+      // Buscar total de provas (filtrado por escola para school_admin)
+      let examsQuery = supabaseAdmin
         .from("exams")
         .select("*", { count: "exact", head: true });
+
+      if (profile?.role === 'school_admin' && schoolId) {
+        examsQuery = examsQuery.eq('school_id', schoolId);
+      }
+
+      const { count: examCount } = await examsQuery;
 
       const stats = {
         totalStudents: uniqueStudents.size,
@@ -6299,11 +6314,13 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
   app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      const allowedSeries = (req as any).profile?.allowed_series || null;
-      console.log(`[ESCOLA DASHBOARD] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const schoolId = profile?.school_id;
+      console.log(`[ESCOLA DASHBOARD] User: ${profile?.name}, School: ${schoolId}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
-      // Buscar todos os resultados
-      const { data: answers, error: answersError } = await supabaseAdmin
+      // Buscar todos os resultados (filtrado por escola para school_admin)
+      let answersQuery = supabaseAdmin
         .from("student_answers")
         .select(`
           id,
@@ -6319,6 +6336,13 @@ Para cada disciplina:
           exams(title)
         `)
         .order("created_at", { ascending: false });
+
+      // Filtrar por school_id se não for super_admin ou se tiver school_id
+      if (profile?.role === 'school_admin' && schoolId) {
+        answersQuery = answersQuery.eq('school_id', schoolId);
+      }
+
+      const { data: answers, error: answersError } = await answersQuery;
 
       if (answersError) throw answersError;
 
@@ -6452,10 +6476,16 @@ Para cada disciplina:
           acertos: r.correct_answers,
         }));
 
-      // Contar provas únicas
-      const { count: examCount } = await supabaseAdmin
+      // Contar provas únicas (filtrado por escola para school_admin)
+      let examsQuery = supabaseAdmin
         .from("exams")
         .select("*", { count: "exact", head: true });
+
+      if (profile?.role === 'school_admin' && schoolId) {
+        examsQuery = examsQuery.eq('school_id', schoolId);
+      }
+
+      const { count: examCount } = await examsQuery;
 
       res.json({
         stats: {
@@ -6648,6 +6678,42 @@ Para cada disciplina:
         }
       });
 
+      // Obter gabarito da primeira prova (se disponível)
+      const firstExam = results[0]?.exams;
+      const answerKey = firstExam?.answer_key || [];
+
+      // Helper: calcular acertos por área baseado no gabarito
+      const calculateAreaCorrectAnswers = (studentAnswers: string[], answerKey: string[]) => {
+        if (!answerKey || answerKey.length === 0 || !studentAnswers) {
+          return { LC: null, CH: null, CN: null, MT: null };
+        }
+
+        const totalQuestions = answerKey.length;
+
+        // Para 180 questões (ENEM completo): LC=1-45, CH=46-90, CN=91-135, MT=136-180
+        // Para 90 questões (1 dia): LC=1-45, CH=46-90 OU CN=1-45, MT=46-90
+        const areaRanges = totalQuestions >= 180
+          ? { LC: [0, 45], CH: [45, 90], CN: [90, 135], MT: [135, 180] }
+          : { LC: [0, 45], CH: [45, 90], CN: null, MT: null };
+
+        const countCorrect = (start: number, end: number) => {
+          let correct = 0;
+          for (let i = start; i < Math.min(end, studentAnswers.length, answerKey.length); i++) {
+            if (studentAnswers[i]?.toUpperCase() === answerKey[i]?.toUpperCase()) {
+              correct++;
+            }
+          }
+          return correct;
+        };
+
+        return {
+          LC: areaRanges.LC ? countCorrect(areaRanges.LC[0], areaRanges.LC[1]) : null,
+          CH: areaRanges.CH ? countCorrect(areaRanges.CH[0], areaRanges.CH[1]) : null,
+          CN: areaRanges.CN ? countCorrect(areaRanges.CN[0], areaRanges.CN[1]) : null,
+          MT: areaRanges.MT ? countCorrect(areaRanges.MT[0], areaRanges.MT[1]) : null,
+        };
+      };
+
       // Converter para formato do ExcelExporter
       const students = Object.values(studentBest)
         .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
@@ -6663,11 +6729,8 @@ Para cada disciplina:
           score: r.correct_answers ? (r.correct_answers / 90) * 10 : 0, // TCT score
           confidence: r.confidence || 0,
           pageNumber: 1,
+          areaCorrectAnswers: calculateAreaCorrectAnswers(r.answers || [], answerKey),
         }));
-
-      // Obter gabarito da primeira prova (se disponível)
-      const firstExam = results[0]?.exams;
-      const answerKey = firstExam?.answer_key || [];
 
       // Preparar TRI scores
       const triScores = new Map<string, number>();
