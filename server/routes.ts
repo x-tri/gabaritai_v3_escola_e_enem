@@ -4112,13 +4112,13 @@ Para cada disciplina:
     return `${matricula}@${schoolSlug}.gabaritai.com`;
   }
 
-  // POST /api/admin/import-students - Importar alunos em lote (TABELA STUDENTS)
+  // POST /api/admin/import-students - Importar alunos em lote (TABELA STUDENTS + PROFILE + AUTH)
   // 🔒 PROTECTED: Requer autenticação + role admin
-  // ✅ NOVA ABORDAGEM: Insere na tabela 'students' separada do auth.users
-  // Alunos podem criar conta posteriormente para acessar dashboard
-  // v2 - 2024-01-11 - Usando tabela students
+  // ✅ FLUXO COMPLETO: Cria students, profile e auth com senha padrão "SENHA123"
+  // v3 - 2025-01-14 - Cria auth user com must_change_password
   app.post("/api/admin/import-students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
-    console.log("[IMPORT v2] Iniciando importação na tabela STUDENTS");
+    const DEFAULT_PASSWORD = 'SENHA123';
+    console.log("[IMPORT v3] Iniciando importação COMPLETA (students + profile + auth)");
     try {
       const { students, schoolId } = req.body as {
         students: ImportStudentInput[];
@@ -4141,7 +4141,16 @@ Para cada disciplina:
         return;
       }
 
-      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s) para escola ${schoolId}...`);
+      // Buscar slug da escola para gerar emails
+      const { data: school } = await supabaseAdmin
+        .from('schools')
+        .select('slug, name')
+        .eq('id', schoolId)
+        .single();
+
+      const schoolSlug = school?.slug || 'escola';
+      console.log(`[IMPORT] Escola: ${school?.name || schoolId} (slug: ${schoolSlug})`);
+      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s)...`);
 
       const results: ImportStudentResult[] = [];
       let created = 0;
@@ -4166,8 +4175,10 @@ Para cada disciplina:
           continue;
         }
 
+        const studentEmail = generateEmail(matricula.trim(), schoolSlug);
+
         try {
-          // Verificar se já existe um aluno com essa matrícula na escola
+          // Verificar se já existe um aluno com essa matrícula na escola (tabela students)
           const { data: existingStudent } = await supabaseAdmin
             .from('students')
             .select('id')
@@ -4175,53 +4186,114 @@ Para cada disciplina:
             .eq('matricula', matricula)
             .maybeSingle();
 
-          if (existingStudent) {
-            // Atualizar aluno existente
-            const { error: updateError } = await supabaseAdmin
-              .from('students')
-              .update({
-                name: nome,
-                turma: turma || null
-              })
-              .eq('id', existingStudent.id);
+          // Verificar se já existe profile com essa matrícula
+          const { data: existingProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('id, email')
+            .eq('student_number', matricula.trim())
+            .eq('school_id', schoolId)
+            .maybeSingle();
 
-            if (updateError) {
-              throw new Error(`Erro ao atualizar: ${updateError.message}`);
+          if (existingStudent || existingProfile) {
+            // Atualizar aluno existente na tabela students
+            if (existingStudent) {
+              await supabaseAdmin
+                .from('students')
+                .update({
+                  name: nome,
+                  turma: turma || null
+                })
+                .eq('id', existingStudent.id);
+            }
+
+            // Atualizar profile existente
+            if (existingProfile) {
+              await supabaseAdmin
+                .from('profiles')
+                .update({
+                  name: nome,
+                  turma: turma || null
+                })
+                .eq('id', existingProfile.id);
             }
 
             results.push({
               matricula,
               nome,
               turma: turma || '',
-              email: '',
-              senha: '',
+              email: existingProfile?.email || studentEmail,
+              senha: '(mantida)',
               status: 'updated',
               message: 'Dados atualizados'
             });
             updated++;
           } else {
-            // Criar novo aluno na tabela students
-            const { error: insertError } = await supabaseAdmin
+            // CRIAR NOVO ALUNO COMPLETO (students + profile + auth)
+
+            // 1. Criar auth user com senha padrão
+            const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+              email: studentEmail,
+              password: DEFAULT_PASSWORD,
+              email_confirm: true,
+              user_metadata: {
+                name: nome,
+                role: 'student',
+                student_number: matricula.trim(),
+                school_id: schoolId,
+                turma: turma || null,
+                must_change_password: true
+              }
+            });
+
+            if (authError) {
+              throw new Error(`Erro ao criar auth: ${authError.message}`);
+            }
+
+            const userId = authUser.user.id;
+
+            // 2. Criar profile vinculado ao auth user
+            const { error: profileError } = await supabaseAdmin
+              .from('profiles')
+              .insert({
+                id: userId,
+                email: studentEmail,
+                name: nome,
+                role: 'student',
+                student_number: matricula.trim(),
+                school_id: schoolId,
+                turma: turma || null,
+                must_change_password: true
+              });
+
+            if (profileError) {
+              // Se falhou profile, deletar auth user para manter consistência
+              await supabaseAdmin.auth.admin.deleteUser(userId);
+              throw new Error(`Erro ao criar profile: ${profileError.message}`);
+            }
+
+            // 3. Criar entrada na tabela students (referência)
+            const { error: studentError } = await supabaseAdmin
               .from('students')
               .insert({
                 school_id: schoolId,
-                matricula,
+                matricula: matricula.trim(),
                 name: nome,
-                turma: turma || null
+                turma: turma || null,
+                profile_id: userId
               });
 
-            if (insertError) {
-              throw new Error(`Erro ao criar: ${insertError.message}`);
+            if (studentError) {
+              console.warn(`[IMPORT] Aviso: students insert falhou (${studentError.message}), mas auth+profile criados OK`);
             }
 
             results.push({
               matricula,
               nome,
               turma: turma || '',
-              email: '',
-              senha: '',
+              email: studentEmail,
+              senha: DEFAULT_PASSWORD,
               status: 'created',
-              message: 'Aluno cadastrado'
+              message: 'Aluno criado com login'
             });
             created++;
           }
@@ -4231,7 +4303,7 @@ Para cada disciplina:
             matricula,
             nome,
             turma: turma || '',
-            email: '',
+            email: studentEmail,
             senha: '',
             status: 'error',
             message: error.message
@@ -4253,7 +4325,8 @@ Para cada disciplina:
         results,
         info: {
           message: "Alunos importados com sucesso!",
-          loginInstructions: "Alunos podem criar conta para acessar resultados via matrícula"
+          defaultPassword: DEFAULT_PASSWORD,
+          loginInstructions: `Alunos fazem login com matrícula + senha "${DEFAULT_PASSWORD}" e serão obrigados a trocar no primeiro acesso`
         }
       });
     } catch (error: any) {
