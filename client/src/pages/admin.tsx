@@ -182,6 +182,11 @@ export default function AdminPage() {
   const [showResetPasswordModal, setShowResetPasswordModal] = useState<Coordinator | null>(null);
   const [newCoordinatorPassword, setNewCoordinatorPassword] = useState('');
 
+  // Reset all passwords states
+  const [showResetAllModal, setShowResetAllModal] = useState(false);
+  const [isResetAllLoading, setIsResetAllLoading] = useState(false);
+  const [resetAllResults, setResetAllResults] = useState<{ reset: number; created: number; errors: number } | null>(null);
+
   const isSuperAdmin = profile?.role === 'super_admin';
 
   const handleLogout = async () => {
@@ -693,6 +698,33 @@ export default function AdminPage() {
     }
   };
 
+  // Reset all student passwords for a school
+  const handleResetAllPasswords = async () => {
+    if (!expandedSchoolId) return;
+    setIsResetAllLoading(true);
+    setResetAllResults(null);
+    try {
+      const response = await authFetch('/api/admin/students/reset-all-passwords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schoolId: expandedSchoolId }),
+      });
+      const data = await response.json();
+      if (data.success || data.summary) {
+        setResetAllResults(data.summary);
+      } else {
+        alert(`Erro: ${data.error}`);
+        setShowResetAllModal(false);
+      }
+    } catch (error) {
+      console.error('Erro ao resetar senhas:', error);
+      alert('Erro ao resetar senhas');
+      setShowResetAllModal(false);
+    } finally {
+      setIsResetAllLoading(false);
+    }
+  };
+
   // Handle school expansion
   const handleSchoolExpand = (schoolId: string) => {
     if (expandedSchoolId === schoolId) {
@@ -1064,13 +1096,26 @@ export default function AdminPage() {
       {/* Header com botões */}
       <div className="flex justify-between items-center">
         <h4 className="font-medium">Alunos</h4>
-        <Button size="sm" onClick={() => {
-          setAlunoForm({ nome: '', matricula: '', turma: '' });
-          setShowAlunoModal(true);
-        }}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Aluno
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setResetAllResults(null);
+              setShowResetAllModal(true);
+            }}
+          >
+            <KeyRound className="h-4 w-4 mr-2" />
+            Ativar Todos
+          </Button>
+          <Button size="sm" onClick={() => {
+            setAlunoForm({ nome: '', matricula: '', turma: '' });
+            setShowAlunoModal(true);
+          }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Aluno
+          </Button>
+        </div>
       </div>
 
       {/* Import CSV */}
@@ -2132,6 +2177,72 @@ export default function AdminPage() {
               Alterar Senha
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Ativar Todos os Alunos */}
+      <Dialog open={showResetAllModal} onOpenChange={(open) => { if (!open && !isResetAllLoading) { setShowResetAllModal(false); setResetAllResults(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              Ativar Todos os Alunos
+            </DialogTitle>
+            <DialogDescription>
+              {resetAllResults ? 'Processo concluido!' : 'Definir senha padrao SENHA123 para todos os alunos desta escola'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetAllResults ? (
+            <div className="space-y-4 mt-4">
+              <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <span className="font-medium">Resultado:</span>
+                </div>
+                <ul className="text-sm space-y-1 ml-7">
+                  <li><strong>{resetAllResults.reset}</strong> senha(s) resetada(s)</li>
+                  <li><strong>{resetAllResults.created}</strong> conta(s) criada(s)</li>
+                  {resetAllResults.errors > 0 && (
+                    <li className="text-red-600"><strong>{resetAllResults.errors}</strong> erro(s)</li>
+                  )}
+                </ul>
+              </div>
+              <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                <p className="text-sm">
+                  <strong>Senha padrao:</strong> <span className="font-mono">SENHA123</span>
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Alunos serao obrigados a trocar a senha no primeiro login.
+                </p>
+              </div>
+              <Button className="w-full" onClick={() => { setShowResetAllModal(false); setResetAllResults(null); }}>
+                Fechar
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4 mt-4">
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  <strong>Atencao:</strong> Esta acao vai:
+                </p>
+                <ul className="text-sm text-yellow-700 dark:text-yellow-300 mt-2 ml-4 list-disc space-y-1">
+                  <li>Resetar senha de alunos que ja tem conta</li>
+                  <li>Criar conta para alunos que ainda nao tem</li>
+                  <li>Todos recebem senha <span className="font-mono font-bold">SENHA123</span></li>
+                </ul>
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowResetAllModal(false)} disabled={isResetAllLoading}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleResetAllPasswords} disabled={isResetAllLoading}>
+                  {isResetAllLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  {isResetAllLoading ? 'Processando...' : 'Confirmar'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
