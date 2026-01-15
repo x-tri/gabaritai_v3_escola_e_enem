@@ -878,21 +878,33 @@ export default function StudentDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Exam Selector */}
-            {results.length > 1 && (
-              <Select value={selectedExamId} onValueChange={setSelectedExamId}>
-                <SelectTrigger className="w-[180px] lg:w-[260px] border-cyan-200 focus:ring-cyan-500 bg-white dark:bg-gray-800">
-                  <SelectValue placeholder="Selecione um simulado" />
-                </SelectTrigger>
-                <SelectContent>
-                  {results.map((result, index) => (
-                    <SelectItem key={result.exam_id} value={result.exam_id}>
-                      {result.exams?.title || 'Prova'} - {new Date(result.created_at).toLocaleDateString('pt-BR')}
-                      {index === 0 && ' (mais recente)'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Exam Selector - Always visible when there are results */}
+            {results.length > 0 && (
+              <div className="flex items-center gap-2">
+                <FileBarChart className="w-4 h-4 text-[#33B5E5] hidden sm:block" />
+                <Select value={selectedExamId} onValueChange={setSelectedExamId}>
+                  <SelectTrigger className="w-[200px] lg:w-[300px] border-[#33B5E5]/30 focus:ring-[#33B5E5] bg-white dark:bg-gray-800 shadow-sm">
+                    <SelectValue placeholder="Selecione um simulado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {results.map((result, index) => (
+                      <SelectItem key={result.exam_id} value={result.exam_id}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{result.exams?.title || 'Simulado'}</span>
+                          <span className="text-gray-500 text-xs">
+                            {new Date(result.created_at).toLocaleDateString('pt-BR')}
+                          </span>
+                          {index === 0 && (
+                            <Badge variant="secondary" className="text-xs bg-[#33B5E5]/10 text-[#33B5E5]">
+                              Recente
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
             {/* Notification Bell */}
