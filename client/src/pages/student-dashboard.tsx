@@ -1,6 +1,5 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/authFetch';
-import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -608,13 +607,29 @@ export default function StudentDashboard() {
       return;
     }
 
+    if (!profile?.id) {
+      setPasswordError('Usuário não identificado');
+      return;
+    }
+
     setPasswordLoading(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      // Use backend endpoint instead of client-side Supabase
+      const response = await fetch('/api/profile/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          newPassword,
+          isForced: false
+        }),
+      });
 
-      if (error) {
-        setPasswordError(error.message);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setPasswordError(data.error || 'Erro ao alterar senha');
       } else {
         // Clear form and close modal
         setShowPasswordModal(false);
