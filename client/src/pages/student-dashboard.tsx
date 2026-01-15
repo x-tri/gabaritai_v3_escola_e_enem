@@ -42,7 +42,7 @@ import {
   TrendingUp, TrendingDown, Minus, Target, CheckCircle2, XCircle, MinusCircle,
   History, Eye, Calendar, BarChart3, AlertTriangle, Users, GraduationCap,
   ArrowRight, Lightbulb, Download, Lock, Unlock, Trophy, Activity, FileBarChart,
-  Bell, LogOut, User, Key, Loader2
+  Bell, LogOut, User, Key, Loader2, Check, X
 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -391,12 +391,24 @@ function AreaCard({ area, tri, turmaStats, delay = 0 }: AreaCardProps) {
 // DIFFICULTY CARD COMPONENT
 // ============================================================================
 
+interface WrongQuestion {
+  questionNumber: number;
+  area: string;
+  content: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  correctRate: number;
+  studentAnswer: string;
+  correctAnswer: string;
+}
+
 interface DifficultyCardProps {
   difficulty: 'easy' | 'medium' | 'hard';
   stats: { total: number; correct: number; wrong: number };
+  wrongQuestions?: WrongQuestion[];
+  onShowWrongQuestions?: (difficulty: 'easy' | 'medium' | 'hard', questions: WrongQuestion[]) => void;
 }
 
-function DifficultyCard({ difficulty, stats }: DifficultyCardProps) {
+function DifficultyCard({ difficulty, stats, wrongQuestions = [], onShowWrongQuestions }: DifficultyCardProps) {
   const config = {
     easy: {
       label: 'Fáceis',
@@ -426,9 +438,23 @@ function DifficultyCard({ difficulty, stats }: DifficultyCardProps) {
 
   const c = config[difficulty];
   const percentage = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+  const filteredQuestions = wrongQuestions.filter(q => q.difficulty === difficulty);
+  const hasWrongQuestions = filteredQuestions.length > 0;
+
+  const handleClick = () => {
+    if (hasWrongQuestions && onShowWrongQuestions) {
+      onShowWrongQuestions(difficulty, filteredQuestions);
+    }
+  };
 
   return (
-    <div className={`rounded-2xl p-5 ${c.bg} border-2 ${c.border}`}>
+    <div
+      className={`rounded-2xl p-5 ${c.bg} border-2 ${c.border} ${hasWrongQuestions ? 'cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200' : ''}`}
+      onClick={handleClick}
+      role={hasWrongQuestions ? 'button' : undefined}
+      tabIndex={hasWrongQuestions ? 0 : undefined}
+      onKeyDown={hasWrongQuestions ? (e) => e.key === 'Enter' && handleClick() : undefined}
+    >
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {c.emoji} {c.label}
@@ -443,9 +469,133 @@ function DifficultyCard({ difficulty, stats }: DifficultyCardProps) {
       </div>
       <div className="flex justify-between mt-2 text-xs text-gray-500">
         <span>Acertei: {stats.correct}/{stats.total}</span>
-        <span>Errei: {stats.wrong}</span>
+        <span className={hasWrongQuestions ? 'underline decoration-dotted' : ''}>
+          Errei: {stats.wrong}
+          {hasWrongQuestions && <span className="ml-1 text-[10px]">👆</span>}
+        </span>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// WRONG QUESTIONS MODAL COMPONENT
+// ============================================================================
+
+interface WrongQuestionsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+  questions: WrongQuestion[];
+}
+
+function WrongQuestionsModal({ isOpen, onClose, difficulty, questions }: WrongQuestionsModalProps) {
+  const config = {
+    easy: {
+      label: 'Fáceis',
+      emoji: '🟢',
+      gradient: 'from-emerald-500 to-teal-600',
+      bgHeader: 'bg-gradient-to-r from-emerald-500 to-teal-600',
+    },
+    medium: {
+      label: 'Médias',
+      emoji: '🟡',
+      gradient: 'from-amber-500 to-orange-600',
+      bgHeader: 'bg-gradient-to-r from-amber-500 to-orange-600',
+    },
+    hard: {
+      label: 'Difíceis',
+      emoji: '🔴',
+      gradient: 'from-red-500 to-rose-600',
+      bgHeader: 'bg-gradient-to-r from-red-500 to-rose-600',
+    },
+  };
+
+  const c = difficulty ? config[difficulty] : config.medium;
+
+  const areaConfig: Record<string, { label: string; color: string }> = {
+    LC: { label: 'Linguagens', color: 'bg-cyan-100 text-cyan-700' },
+    CH: { label: 'Humanas', color: 'bg-orange-100 text-orange-700' },
+    CN: { label: 'Natureza', color: 'bg-emerald-100 text-emerald-700' },
+    MT: { label: 'Matemática', color: 'bg-indigo-100 text-indigo-700' },
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col p-0">
+        {/* Header */}
+        <div className={`${c.bgHeader} p-6 text-white`}>
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+              {c.emoji} Questões {c.label} que Você Errou
+            </DialogTitle>
+            <DialogDescription className="text-white/80">
+              {questions.length} {questions.length === 1 ? 'questão' : 'questões'} para revisar
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        {/* Questions List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {questions.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-emerald-500" />
+              <p>Parabéns! Você acertou todas as questões {c.label.toLowerCase()}!</p>
+            </div>
+          ) : (
+            questions.map((q, index) => (
+              <div
+                key={`${q.questionNumber}-${index}`}
+                className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-bold text-gray-900 dark:text-white">
+                        Questão {q.questionNumber}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${areaConfig[q.area]?.color || 'bg-gray-100 text-gray-700'}`}>
+                        {areaConfig[q.area]?.label || q.area}
+                      </span>
+                    </div>
+                    {q.content && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
+                        {q.content}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className="flex items-center gap-1">
+                        <X className="w-4 h-4 text-red-500" />
+                        <span className="text-gray-500">Sua resposta:</span>
+                        <span className="font-semibold text-red-600">{q.studentAnswer}</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Check className="w-4 h-4 text-emerald-500" />
+                        <span className="text-gray-500">Gabarito:</span>
+                        <span className="font-semibold text-emerald-600">{q.correctAnswer}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xs text-gray-500 mb-1">Taxa de acerto</div>
+                    <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
+                      {Math.round(q.correctRate)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800/50">
+          <Button onClick={onClose} className="w-full">
+            Fechar
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -496,6 +646,17 @@ export default function StudentDashboard() {
   // Filters
   const [selectedAreaFilter, setSelectedAreaFilter] = useState<string>('all');
   const [selectedDifficultyFilter, setSelectedDifficultyFilter] = useState<string>('all');
+
+  // Wrong questions modal
+  const [wrongQuestionsModalOpen, setWrongQuestionsModalOpen] = useState(false);
+  const [wrongQuestionsModalDifficulty, setWrongQuestionsModalDifficulty] = useState<'easy' | 'medium' | 'hard' | null>(null);
+  const [wrongQuestionsForModal, setWrongQuestionsForModal] = useState<WrongQuestion[]>([]);
+
+  const handleShowWrongQuestions = (difficulty: 'easy' | 'medium' | 'hard', questions: WrongQuestion[]) => {
+    setWrongQuestionsModalDifficulty(difficulty);
+    setWrongQuestionsForModal(questions);
+    setWrongQuestionsModalOpen(true);
+  };
 
   // Visible lines for evolution chart
   const [visibleLines, setVisibleLines] = useState({
@@ -892,9 +1053,24 @@ export default function StudentDashboard() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <DifficultyCard difficulty="easy" stats={details.difficultyStats.easy} />
-                  <DifficultyCard difficulty="medium" stats={details.difficultyStats.medium} />
-                  <DifficultyCard difficulty="hard" stats={details.difficultyStats.hard} />
+                  <DifficultyCard
+                    difficulty="easy"
+                    stats={details.difficultyStats.easy}
+                    wrongQuestions={details.studentWrongQuestions}
+                    onShowWrongQuestions={handleShowWrongQuestions}
+                  />
+                  <DifficultyCard
+                    difficulty="medium"
+                    stats={details.difficultyStats.medium}
+                    wrongQuestions={details.studentWrongQuestions}
+                    onShowWrongQuestions={handleShowWrongQuestions}
+                  />
+                  <DifficultyCard
+                    difficulty="hard"
+                    stats={details.difficultyStats.hard}
+                    wrongQuestions={details.studentWrongQuestions}
+                    onShowWrongQuestions={handleShowWrongQuestions}
+                  />
                 </div>
 
                 {/* Wrong Questions Table */}
@@ -1570,6 +1746,14 @@ export default function StudentDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Wrong Questions Modal */}
+      <WrongQuestionsModal
+        isOpen={wrongQuestionsModalOpen}
+        onClose={() => setWrongQuestionsModalOpen(false)}
+        difficulty={wrongQuestionsModalDifficulty}
+        questions={wrongQuestionsForModal}
+      />
     </div>
   );
 }
