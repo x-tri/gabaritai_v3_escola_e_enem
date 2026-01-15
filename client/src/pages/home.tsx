@@ -395,8 +395,7 @@ export default function Home() {
   const [escolaAlternativesCount, setEscolaAlternativesCount] = useState<number>(5); // 4 = A-D, 5 = A-E para modo escola
   const [enableOcr, setEnableOcr] = useState<boolean>(true); // GPT Vision OCR ativado por padrão
   
-  // PDF Generation from CSV
-  const [mainTab, setMainTab] = useState<"process" | "generate">("process");
+  // PDF Generation from CSV (legacy - funcionalidade movida para criação de turma)
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<{ nome: string; turma: string; matricula: string }[]>([]);
   const [csvTotalStudents, setCsvTotalStudents] = useState<number>(0);
@@ -6817,21 +6816,10 @@ export default function Home() {
       <main className="flex-1 max-w-full mx-auto px-6 py-8">
         {!file && !isBatchMode && status === "idle" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Coluna Esquerda: Tabs de Processar/Gerar */}
+            {/* Coluna Esquerda: Upload de Gabaritos */}
             <div className="lg:col-span-2 space-y-6">
-              <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as "process" | "generate")} className="w-full">
-              <TabsList className="grid w-full max-w-lg mx-auto grid-cols-2 bg-slate-100 dark:bg-slate-800">
-                <TabsTrigger value="process" data-testid="tab-process" className="data-[state=active]:bg-white data-[state=active]:text-primary dark:data-[state=active]:bg-slate-700">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Processar Gabaritos
-                </TabsTrigger>
-                <TabsTrigger value="generate" data-testid="tab-generate" className="data-[state=active]:bg-white data-[state=active]:text-primary dark:data-[state=active]:bg-slate-700">
-                  <Users className="h-4 w-4 mr-2" />
-                  Gerar Gabaritos
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="process" className="mt-6">
+              {/* Upload de PDFs para processamento */}
+              <div className="mt-6">
                 <Card className="border-dashed border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 h-full">
                   <CardContent className="p-0 h-full">
                     <div
@@ -6884,163 +6872,11 @@ export default function Home() {
                         <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
                           PDFs e Imagens
                         </Badge>
-                        <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700">
-                          Processamento em lote
-                        </Badge>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-              </TabsContent>
-              
-              <TabsContent value="generate" className="mt-6">
-                <Card>
-                  <CardHeader className="text-center">
-                    <CardTitle className="flex items-center justify-center gap-2 text-slate-800 dark:text-slate-100">
-                      <FileSpreadsheet className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                      Gerar Gabaritos Personalizados
-                    </CardTitle>
-                    <CardDescription className="text-slate-600 dark:text-slate-400">
-                      Faça upload de um CSV com os dados dos alunos para gerar gabaritos com nome, turma e matrícula já preenchidos
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {!csvFile ? (
-                      <div className="border-2 border-dashed rounded-lg p-8 text-center">
-                        <input
-                          ref={csvInputRef}
-                          type="file"
-                          accept=".csv,text/csv,application/vnd.ms-excel"
-                          onChange={handleCsvUpload}
-                          className="hidden"
-                          id="csv-upload"
-                          data-testid="input-csv-upload"
-                        />
-                        <label
-                          htmlFor="csv-upload"
-                          className="cursor-pointer flex flex-col items-center"
-                        >
-                          <div className="p-4 rounded-full bg-muted mb-4">
-                            {csvLoading ? (
-                              <Loader2 className="h-10 w-10 text-primary animate-spin" />
-                            ) : (
-                              <FileUp className="h-10 w-10 text-muted-foreground" />
-                            )}
-                          </div>
-                          <p className="text-lg font-medium mb-2">
-                            {csvLoading ? "Processando..." : "Clique para selecionar o arquivo CSV"}
-                          </p>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Formato esperado: NOME;TURMA;MATRICULA
-                          </p>
-                          <div className="flex gap-2 flex-wrap justify-center">
-                            <Badge variant="outline" className="text-xs">
-                              Separador: ; ou ,
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              Codificação UTF-8
-                            </Badge>
-                          </div>
-                        </label>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-md bg-primary/10">
-                              <FileText className="h-5 w-5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="font-medium">{csvFile.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {csvTotalStudents} alunos encontrados
-                              </p>
-                            </div>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={handleClearCsv} data-testid="button-clear-csv">
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        
-                        {csvPreview.length > 0 && (
-                          <div>
-                            <p className="text-sm font-medium mb-2 flex items-center gap-2">
-                              <Eye className="h-4 w-4" />
-                              Preview (primeiros {Math.min(10, csvPreview.length)} alunos)
-                            </p>
-                            <div className="border rounded-lg overflow-hidden">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="bg-muted/50">
-                                    <TableHead className="text-xs font-semibold">#</TableHead>
-                                    <TableHead className="text-xs font-semibold">Nome</TableHead>
-                                    <TableHead className="text-xs font-semibold">Turma</TableHead>
-                                    <TableHead className="text-xs font-semibold">Matrícula</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {csvPreview.map((student, idx) => (
-                                    <TableRow key={idx} data-testid={`row-csv-preview-${idx}`}>
-                                      <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                                      <TableCell className="font-medium">{student.nome}</TableCell>
-                                      <TableCell>{student.turma || "-"}</TableCell>
-                                      <TableCell className="font-mono">{student.matricula || "-"}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                            {csvTotalStudents > 10 && (
-                              <p className="text-xs text-muted-foreground mt-2 text-center">
-                                ... e mais {csvTotalStudents - 10} alunos
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        
-                        <div className="bg-muted/30 p-4 rounded-lg space-y-2">
-                          <p className="text-sm font-medium">Os gabaritos serão gerados com:</p>
-                          <ul className="text-sm text-muted-foreground space-y-1 ml-4">
-                            <li className="flex items-center gap-2">
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              Nome do aluno no campo "NOME"
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              Turma no campo "TURMA"
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              Matrícula no campo "NÚMERO"
-                            </li>
-                          </ul>
-                        </div>
-                        
-                        <Button
-                          className="w-full"
-                          size="lg"
-                          onClick={handleGeneratePdfs}
-                          disabled={pdfGenerating}
-                          data-testid="button-generate-pdfs"
-                        >
-                          {pdfGenerating ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Gerando {csvTotalStudents} gabaritos...
-                            </>
-                          ) : (
-                            <>
-                              <Download className="h-4 w-4 mr-2" />
-                              Gerar e Baixar PDF ({csvTotalStudents} páginas)
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
+              </div>
             </div>
             
             {/* Coluna Direita: Histórico de Avaliações */}
