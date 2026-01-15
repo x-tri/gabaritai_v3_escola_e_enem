@@ -144,3 +144,91 @@ import { supabase } from "@/lib/supabase";  // → client/src/lib/supabase.ts
 3. For OMR testing, either:
    - Start local Python service, or
    - Set `USE_MODAL=true` to use Modal.com cloud service
+
+## Local Supabase Development
+
+For isolated local development with Docker-based Supabase:
+
+### Setup
+
+```bash
+# Initialize Supabase (first time only)
+npx supabase init
+
+# Start local Supabase (requires Docker running)
+npx supabase start
+
+# Stop local Supabase
+npx supabase stop
+```
+
+### Local URLs
+
+| Service | URL |
+|---------|-----|
+| API Gateway | http://127.0.0.1:54321 |
+| Studio (Dashboard) | http://127.0.0.1:54323 |
+| Mailpit (Emails) | http://127.0.0.1:54324 |
+| PostgreSQL | postgresql://postgres:postgres@127.0.0.1:54322/postgres |
+
+### Configuration
+
+Use `.env.local` for local Supabase development (copy to `.env` when developing locally):
+
+```bash
+# Frontend
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=<from npx supabase start output>
+
+# Backend
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_KEY=<from npx supabase start output>
+```
+
+### Database Commands
+
+```bash
+# Apply migrations to local Supabase
+npx supabase db push
+
+# Pull schema from remote to local
+npx supabase db pull
+
+# Generate TypeScript types from local schema
+npx supabase gen types typescript --local > shared/database.types.ts
+
+# Reset local database (destructive)
+npx supabase db reset
+```
+
+### Workflow
+
+1. Start Docker Desktop
+2. Run `npx supabase start` (note the keys from output)
+3. Copy `.env.local` to `.env` or update values
+4. Run `npm run dev`
+5. Access Studio at http://127.0.0.1:54323 to manage data
+
+## Student Authentication Flow
+
+### Default Password
+
+New students are created with default password `SENHA123` and `must_change_password = true` in their profile.
+
+### First Login Flow
+
+1. Student logs in with matrícula + `SENHA123`
+2. System checks `must_change_password` flag in profile
+3. If `true`, modal forces password change before accessing dashboard
+4. After changing, `must_change_password` is set to `false`
+
+### Password Change Endpoints
+
+- **Forced change (first login)**: `POST /api/profile/change-password` with `isForced: true`
+- **Voluntary change (profile menu)**: `POST /api/profile/change-password` with `isForced: false`
+
+Both use `supabaseAdmin.auth.admin.updateUserById()` to bypass session requirements.
+
+### Activating Students
+
+Students imported via Excel have profiles but no auth users. Use "Ativar Todos" button in school admin panel to create auth accounts with default password.
