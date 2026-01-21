@@ -263,14 +263,37 @@ export default function AdminPage() {
       }
 
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `gabaritos_dia${dia}_${turmaNome.replace(/\s+/g, '_')}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const filename = `gabaritos_dia${dia}_${turmaNome.replace(/\s+/g, '_')}.pdf`;
+
+      // Tentar usar File System Access API (Chrome moderno)
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: 'PDF Document',
+              accept: { 'application/pdf': ['.pdf'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return;
+        } catch (err: any) {
+          // Usuário cancelou ou API falhou, tentar fallback
+          if (err.name === 'AbortError') return;
+        }
+      }
+
+      // Fallback: método tradicional com link
+      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Erro ao gerar gabaritos:', error);
       alert(error instanceof Error ? error.message : 'Erro ao gerar gabaritos');
