@@ -4251,10 +4251,11 @@ Para cada disciplina:
 
             const userId = authUser.user.id;
 
-            // 2. Criar profile vinculado ao auth user
+            // 2. Criar/atualizar profile vinculado ao auth user
+            // Usa upsert porque o trigger handle_new_user já pode ter criado um profile básico
             const { error: profileError } = await supabaseAdmin
               .from('profiles')
-              .insert({
+              .upsert({
                 id: userId,
                 email: studentEmail,
                 name: nome,
@@ -4263,7 +4264,7 @@ Para cada disciplina:
                 school_id: schoolId,
                 turma: turma || null,
                 must_change_password: true
-              });
+              }, { onConflict: 'id' });
 
             if (profileError) {
               // Se falhou profile, deletar auth user para manter consistência
@@ -4439,10 +4440,11 @@ Para cada disciplina:
 
           const userId = authUser.user.id;
 
-          // Criar profile
+          // Criar/atualizar profile
+          // Usa upsert porque o trigger handle_new_user já pode ter criado um profile básico
           const { error: profileError } = await supabaseAdmin
             .from('profiles')
-            .insert({
+            .upsert({
               id: userId,
               email: studentEmail,
               name: student.name,
@@ -4451,7 +4453,7 @@ Para cada disciplina:
               school_id: schoolId,
               turma: student.turma || null,
               must_change_password: true
-            });
+            }, { onConflict: 'id' });
 
           if (profileError) {
             await supabaseAdmin.auth.admin.deleteUser(userId);
