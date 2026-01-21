@@ -22,7 +22,9 @@ import { parse } from 'csv-parse/sync';
 import { supabaseAdmin } from '../lib/supabase.js';
 
 // Caminho do logo X-TRI
-const LOGO_PATH = path.resolve(process.cwd(), 'assets', 'xtri-logo.png');
+const LOGO_PATH = path.resolve(process.cwd(), 'server', 'assets', 'xtri-logo.png');
+
+
 
 // ============================================================
 // TIPOS
