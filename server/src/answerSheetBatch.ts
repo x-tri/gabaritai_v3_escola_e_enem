@@ -320,7 +320,7 @@ function drawCornerMarkers(page: any) {
  * Desenha a grade de bolhas (90 questões) com letras dentro.
  * Usa posições exatas do template XTRI em 150 DPI.
  */
-function drawBubbleGrid(page: any, font: any, boldFont: any) {
+function drawBubbleGrid(page: any, font: any, boldFont: any, startNumber: number = 1) {
   const bubbleRadiusPt = pxToPtX(BUBBLE_RADIUS_PX);
 
   // Desenhar separadores verticais entre colunas
@@ -341,11 +341,11 @@ function drawBubbleGrid(page: any, font: any, boldFont: any) {
   // Desenhar bolhas com letras dentro
   for (let colIdx = 0; colIdx < NUM_COLUMNS; colIdx++) {
     for (let rowIdx = 0; rowIdx < QUESTIONS_PER_COLUMN; rowIdx++) {
-      const qNum = colIdx * QUESTIONS_PER_COLUMN + rowIdx + 1;
+      const qNum = startNumber + colIdx * QUESTIONS_PER_COLUMN + rowIdx;
       const y = GRID_START_Y + (rowIdx * ROW_SPACING);
 
       // Número da questão
-      const numX = GRID_START_X + (colIdx * COLUMN_SPACING) - 30;
+      const numX = GRID_START_X + (colIdx * COLUMN_SPACING) - 48;
       const numText = qNum.toString().padStart(2, '0');
       page.drawText(numText, {
         x: pxToPtX(numX),
@@ -394,7 +394,8 @@ async function generateAnswerSheetPage(
   examName: string,
   font: any,
   boldFont: any,
-  logoImage: any | null
+  logoImage: any | null,
+  startNumber: number = 1
 ): Promise<void> {
   const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
 
@@ -535,7 +536,7 @@ async function generateAnswerSheetPage(
   // ========== GRADE DE BOLHAS ==========
   // Usa coordenadas fixas do template XTRI (150 DPI convertido para pontos)
 
-  drawBubbleGrid(page, font, boldFont);
+  drawBubbleGrid(page, font, boldFont, startNumber);
 
   // ========== MARCADORES DE CANTO ==========
   // Posições fixas do template XTRI para compatibilidade com OMR
@@ -558,7 +559,8 @@ async function generateAnswerSheetPage(
  */
 export async function generateBatchPDF(
   students: AnswerSheetStudent[],
-  examName: string
+  examName: string,
+  startNumber: number = 1
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
 
@@ -582,7 +584,7 @@ export async function generateBatchPDF(
 
   // Gerar página para cada aluno
   for (const student of students) {
-    await generateAnswerSheetPage(pdfDoc, student, examName, font, boldFont, logoImage);
+    await generateAnswerSheetPage(pdfDoc, student, examName, font, boldFont, logoImage, startNumber);
   }
 
   // Salvar PDF

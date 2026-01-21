@@ -11,6 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, KeyRound, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Printer, FileText, Building2, ClipboardList, Plus, Edit2 } from 'lucide-react';
 import TrashIcon from '@/components/ui/trash-icon';
@@ -242,13 +248,13 @@ export default function AdminPage() {
   }, []);
 
   // Gerar PDFs de gabaritos
-  const handleGenerateGabaritos = async (turmaNome: string, schoolId: string) => {
+  const handleGenerateGabaritos = async (turmaNome: string, schoolId: string, dia: number = 1) => {
     setGeneratingPdfForTurma(turmaNome); // Marca qual turma está gerando
     try {
       const response = await authFetch('/api/admin/generate-gabaritos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ turma: turmaNome, school_id: schoolId }),
+        body: JSON.stringify({ turma: turmaNome, school_id: schoolId, dia }),
       });
 
       if (!response.ok) {
@@ -260,7 +266,7 @@ export default function AdminPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `gabaritos_${turmaNome.replace(/\s+/g, '_')}.pdf`;
+      link.download = `gabaritos_dia${dia}_${turmaNome.replace(/\s+/g, '_')}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1018,22 +1024,36 @@ export default function AdminPage() {
                       <Users className="h-4 w-4 mr-1" />
                       Ver
                     </Button>
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleGenerateGabaritos(turma.nome, school.id);
-                      }}
-                      disabled={generatingPdfForTurma !== null}
-                    >
-                      {generatingPdfForTurma === turma.nome ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <Printer className="h-4 w-4 mr-1" />
-                      )}
-                      Gabaritos
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          disabled={generatingPdfForTurma !== null}
+                        >
+                          {generatingPdfForTurma === turma.nome ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              Gerando...
+                            </>
+                          ) : (
+                            <>
+                              <Printer className="h-4 w-4 mr-1" />
+                              Gabaritos
+                              <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                            </>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleGenerateGabaritos(turma.nome, school.id, 1)}>
+                          Dia 1 (Questões 1-90)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleGenerateGabaritos(turma.nome, school.id, 2)}>
+                          Dia 2 (Questões 91-180)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>

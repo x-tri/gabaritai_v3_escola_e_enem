@@ -5331,8 +5331,11 @@ Para cada disciplina:
       }
 
       // Gerar PDF com template XTRI (com marcadores OMR, QR codes, letras nas bolhas)
+      const isDia2 = dia === '2' || dia === 2;
+      const startNumber = isDia2 ? 91 : 1;
       const examName = dia ? `Dia ${dia}` : 'Simulado ENEM';
-      const pdfBuffer = await generateBatchPDF(studentsForPdf, examName);
+
+      const pdfBuffer = await generateBatchPDF(studentsForPdf, examName, startNumber);
 
       console.log(`[GABARITOS] PDF XTRI gerado com ${alunos.length} páginas`);
 
