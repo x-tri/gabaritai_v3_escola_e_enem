@@ -68,8 +68,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function fetchProfile(userId: string) {
     try {
+      // Buscar sessão atual para obter o token
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+
       // Usar endpoint do backend que bypassa RLS
-      const response = await fetch(`/api/profile/${userId}`);
+      const response = await fetch(`/api/profile/${userId}`, {
+        headers: currentSession?.access_token
+          ? { 'Authorization': `Bearer ${currentSession.access_token}` }
+          : {},
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
