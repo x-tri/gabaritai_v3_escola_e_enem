@@ -67,22 +67,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function fetchProfile(userId: string) {
+    console.log('[AuthContext] Fetching profile for:', userId);
+
     try {
       // Buscar sessão atual para obter o token
       const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+      // Timeout de 10 segundos para evitar loading infinito
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       // Usar endpoint do backend que bypassa RLS
       const response = await fetch(`/api/profile/${userId}`, {
         headers: currentSession?.access_token
           ? { 'Authorization': `Bearer ${currentSession.access_token}` }
           : {},
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('[AuthContext] Profile loaded:', data?.role);
+
       if (data && data.id) {
         setProfile(data);
         // Verificar se precisa forçar troca de senha
@@ -90,13 +101,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setShowForceChangePassword(true);
         }
       } else {
-        console.log('Profile não encontrado para userId:', userId);
+        console.warn('[AuthContext] Profile not found for userId:', userId);
         setProfile(null);
       }
     } catch (error: any) {
-      console.error('Erro ao buscar profile:', error?.message || error);
+      if (error.name === 'AbortError') {
+        console.error('[AuthContext] Profile fetch timed out after 10s');
+      } else {
+        console.error('[AuthContext] Error fetching profile:', error?.message || error);
+      }
       setProfile(null);
     } finally {
+      console.log('[AuthContext] Setting loading to false');
       setLoading(false);
     }
   }

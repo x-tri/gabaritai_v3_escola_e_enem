@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/authFetch';
+import { supabase } from '@/lib/supabase';
 
 export interface NavItemConfig {
   id: string;
@@ -44,13 +45,21 @@ export function TopNavbar({ items, activeItem, onItemClick, className }: TopNavb
       if (!profile || profile.role === 'super_admin') return;
 
       try {
+        // Verificar se há sessão ativa antes de fazer a requisição
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.log('[TopNavbar] No session, skipping message fetch');
+          return;
+        }
+
         const response = await authFetch('/api/messages');
         if (response.ok) {
           const data = await response.json();
           setUnreadCount(data.unread_count || 0);
         }
       } catch (error) {
-        console.error('Erro ao buscar mensagens:', error);
+        // Silently ignore errors to not break the UI
+        console.error('[TopNavbar] Error fetching messages:', error);
       }
     };
 

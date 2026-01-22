@@ -18,10 +18,22 @@ export async function authFetch(
     console.warn('[authFetch] No active session found during request to:', url);
   }
 
-  return fetch(url, {
-    ...options,
-    headers,
-  });
+  // Timeout de 30 segundos por padrão (se não houver signal já definido)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal || controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
 }
 
 /**
