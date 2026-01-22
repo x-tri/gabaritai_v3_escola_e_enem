@@ -4601,7 +4601,7 @@ Para cada disciplina:
         throw new Error(`Erro ao deletar: ${deleteError.message}`);
       }
 
-      console.log(`[DELETE STUDENT] Aluno ${student.name} (${student.matricula}) deletado`);
+      console.log(`[DELETE STUDENT] Aluno deletado: ID ${id}`);
 
       res.json({
         success: true,
@@ -4648,7 +4648,7 @@ Para cada disciplina:
         throw new Error(`Erro ao resetar senha: ${authError.message}`);
       }
 
-      console.log(`[RESET] Senha resetada para ${student.name} (${student.student_number})`);
+      console.log(`[RESET] Senha resetada para aluno ID: ${id}`);
 
       res.json({
         success: true,
@@ -4839,11 +4839,11 @@ Para cada disciplina:
         throw new Error(`Erro ao resetar senha: ${authError.message}`);
       }
 
-      console.log(`[RESET-PWD] Senha resetada para aluno ${studentId}`);
+      console.log(`[RESET-PWD] Senha resetada`);
 
       res.json({
         success: true,
-        novaSenha,
+        // 🔒 SEGURANÇA: novaSenha removida da response
         message: "Senha resetada com sucesso"
       });
     } catch (error: any) {
@@ -5925,7 +5925,7 @@ Para cada disciplina:
         });
       }
 
-      console.log(`[AUTH] Buscando email para matrícula: ${matricula}`);
+      console.log(`[AUTH] Buscando perfil por matrícula`);
 
       const { data: profile, error } = await supabaseAdmin
         .from("profiles")
@@ -5934,7 +5934,7 @@ Para cada disciplina:
         .single();
 
       if (error || !profile) {
-        console.log(`[AUTH] Matrícula não encontrada: ${matricula}`);
+        console.log(`[AUTH] Matrícula não encontrada`);
         // 🔒 SEGURANÇA: Mensagem genérica para não confirmar existência de matrículas
         return res.status(404).json({
           error: "Credenciais inválidas",
@@ -5942,7 +5942,7 @@ Para cada disciplina:
         });
       }
 
-      console.log(`[AUTH] Matrícula ${matricula} encontrada`);
+      console.log(`[AUTH] Matrícula encontrada`);
 
       // 🔒 SEGURANÇA: Mascarar email para evitar exposição completa
       // Exemplo: "joao.silva@escola.com" -> "jo****va@es****.com"
@@ -6067,7 +6067,7 @@ Para cada disciplina:
         });
       }
 
-      console.log(`[LOGIN] Tentativa de login com matrícula: ${matricula}`);
+      console.log(`[LOGIN] Tentativa de login`);
 
       // 1. Buscar profile pela matrícula para obter o email
       const { data: profile, error: profileError } = await supabaseAdmin
@@ -6077,7 +6077,7 @@ Para cada disciplina:
         .single();
 
       if (profileError || !profile) {
-        console.log(`[LOGIN] Matrícula não encontrada: ${matricula}`);
+        console.log(`[LOGIN] Matrícula não encontrada`);
         return res.status(401).json({
           error: "Matrícula não encontrada"
         });
@@ -6088,7 +6088,7 @@ Para cada disciplina:
 
       if (!authUser?.user) {
         // Profile existe mas não tem Auth user - precisa registrar senha
-        console.log(`[LOGIN] Profile existe mas sem Auth user: ${matricula}`);
+        console.log(`[LOGIN] Profile existe mas sem Auth user`);
         return res.status(200).json({
           success: false,
           needsRegistration: true,
@@ -6109,7 +6109,7 @@ Para cada disciplina:
       });
 
       if (authError || !authData.session) {
-        console.log(`[LOGIN] Senha incorreta para matrícula: ${matricula}`);
+        console.log(`[LOGIN] Tentativa de login falhou`);
         return res.status(401).json({
           error: "Senha incorreta"
         });
@@ -6118,7 +6118,7 @@ Para cada disciplina:
       // 4. Verificar se precisa trocar senha (must_change_password)
       const mustChangePassword = authData.user?.user_metadata?.must_change_password === true;
 
-      console.log(`[LOGIN] ✅ Login bem-sucedido: ${matricula} (${profile.name})`);
+      console.log(`[LOGIN] ✅ Login bem-sucedido`);
 
       res.json({
         success: true,
@@ -6161,7 +6161,7 @@ Para cada disciplina:
         });
       }
 
-      console.log(`[REGISTER] Registrando senha para matrícula: ${matricula}`);
+      console.log(`[REGISTER] Iniciando registro de aluno`);
 
       // 1. Buscar profile pela matrícula
       const { data: profile, error: profileError } = await supabaseAdmin
@@ -6171,7 +6171,7 @@ Para cada disciplina:
         .single();
 
       if (profileError || !profile) {
-        console.log(`[REGISTER] Matrícula não encontrada: ${matricula}`);
+        console.log(`[REGISTER] Matrícula não encontrada`);
         return res.status(404).json({
           error: "Matrícula não encontrada"
         });
@@ -6181,7 +6181,7 @@ Para cada disciplina:
       const { data: existingAuth } = await supabaseAdmin.auth.admin.getUserById(profile.id);
 
       if (existingAuth?.user) {
-        console.log(`[REGISTER] Auth user já existe para: ${matricula}`);
+        console.log(`[REGISTER] Auth user já existe`);
         return res.status(400).json({
           error: "Você já tem uma conta. Use o login normal.",
           hint: "Se esqueceu a senha, solicite reset ao administrador."
@@ -6232,7 +6232,7 @@ Para cada disciplina:
 
       if (loginError || !authData.session) {
         // Conta criada mas login falhou - ainda assim é sucesso
-        console.log(`[REGISTER] ✅ Conta criada, login manual necessário: ${matricula}`);
+        console.log(`[REGISTER] ✅ Conta criada, login manual necessário`);
         return res.json({
           success: true,
           message: "Conta criada com sucesso! Faça login.",
@@ -6240,7 +6240,7 @@ Para cada disciplina:
         });
       }
 
-      console.log(`[REGISTER] ✅ Conta criada e logado: ${matricula} (${profile.name})`);
+      console.log(`[REGISTER] ✅ Conta criada e logado`);
 
       res.json({
         success: true,
