@@ -1672,78 +1672,8 @@ export async function registerRoutes(
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // ⚠️ ENDPOINT TEMPORÁRIO - Promover xandao@gmail.com para super_admin
-  // REMOVER APÓS USO!
-  app.get("/api/fix-admin-xandao", async (req: Request, res: Response) => {
-    try {
-      const targetEmail = "xandao@gmail.com";
-
-      // Buscar profile pelo email
-      const { data: profile, error: fetchError } = await supabaseAdmin
-        .from("profiles")
-        .select("*")
-        .eq("email", targetEmail)
-        .single();
-
-      if (fetchError || !profile) {
-        // Se não existe profile, buscar usuário auth e criar profile
-        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-        const authUser = authUsers?.users?.find(u => u.email === targetEmail);
-
-        if (!authUser) {
-          return res.status(404).json({
-            error: "Usuário não encontrado no Auth nem no Profiles",
-            email: targetEmail
-          });
-        }
-
-        // Criar profile para o usuário auth existente
-        const { error: createError } = await supabaseAdmin
-          .from("profiles")
-          .insert({
-            id: authUser.id,
-            email: targetEmail,
-            name: "Admin XTRI",
-            role: "super_admin"
-          });
-
-        if (createError) {
-          return res.status(500).json({ error: createError.message });
-        }
-
-        return res.json({
-          success: true,
-          action: "created",
-          message: "Profile criado como super_admin",
-          userId: authUser.id
-        });
-      }
-
-      // Atualizar role para super_admin
-      const { error: updateError } = await supabaseAdmin
-        .from("profiles")
-        .update({ role: "super_admin" })
-        .eq("email", targetEmail);
-
-      if (updateError) {
-        return res.status(500).json({ error: updateError.message });
-      }
-
-      res.json({
-        success: true,
-        action: "updated",
-        message: "Role atualizada para super_admin",
-        user: {
-          id: profile.id,
-          email: profile.email,
-          oldRole: profile.role,
-          newRole: "super_admin"
-        }
-      });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
+  // 🔒 SEGURANÇA: Endpoint /api/fix-admin-xandao REMOVIDO
+  // Motivo: Permitia escalação de privilégios sem autenticação
 
   // Endpoint TRI V2 - Status/Info (GET)
   app.get("/api/calculate-tri-v2", async (req: Request, res: Response) => {
@@ -1815,8 +1745,8 @@ export async function registerRoutes(
       console.error("[TRI V2] Erro ao calcular TRI V2:", error);
       res.status(500).json({
         error: "Erro ao calcular TRI V2",
-        details: error.message || "Erro desconhecido",
-        stack: error.stack
+        details: error.message || "Erro desconhecido"
+        // 🔒 SEGURANÇA: Stack trace removido para não expor código interno
       });
     }
   });
@@ -4740,14 +4670,14 @@ Para cada disciplina:
 
       res.json({
         success: true,
-        message: `Senha de ${student.name} resetada para ${DEFAULT_PASSWORD}`,
+        message: `Senha de ${student.name} resetada com sucesso`,
         student: {
           id,
           name: student.name,
           student_number: student.student_number,
           email: student.email
         },
-        newPassword: DEFAULT_PASSWORD,
+        // 🔒 SEGURANÇA: Senha não é mais retornada na response
         mustChangePassword: true
       });
     } catch (error: any) {
@@ -6101,9 +6031,9 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/auth/promote-to-admin - Promover usuário atual para super_admin
-  // ⚠️ ENDPOINT TEMPORÁRIO - remover em produção
-  app.post("/api/auth/promote-to-admin", requireAuth, async (req: Request, res: Response) => {
+  // POST /api/auth/promote-to-admin - Promover usuário para super_admin
+  // 🔒 PROTEGIDO: Apenas super_admin pode promover outros usuários
+  app.post("/api/auth/promote-to-admin", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const authReq = req as any;
       const userId = authReq.user?.id;
@@ -6385,8 +6315,9 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/profile/:userId - Buscar profile de um usuário (bypass RLS)
-  app.get("/api/profile/:userId", async (req: Request, res: Response) => {
+  // GET /api/profile/:userId - Buscar profile de um usuário
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/profile/:userId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
 
@@ -6416,7 +6347,8 @@ Para cada disciplina:
   });
 
   // PUT /api/profile/update - Atualizar perfil do usuário
-  app.put("/api/profile/update", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.put("/api/profile/update", requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId, name } = req.body;
 
@@ -6445,7 +6377,8 @@ Para cada disciplina:
   });
 
   // POST /api/profile/change-password - Alterar senha do usuário
-  app.post("/api/profile/change-password", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.post("/api/profile/change-password", requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId, currentPassword, newPassword, isForced } = req.body;
 
@@ -6457,10 +6390,10 @@ Para cada disciplina:
         return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
       }
 
-      // Buscar o perfil do usuário para pegar o email
+      // Buscar o perfil do usuário para pegar o email E verificar must_change_password
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
-        .select("email")
+        .select("email, must_change_password")
         .eq("id", userId)
         .single();
 
@@ -6468,8 +6401,16 @@ Para cada disciplina:
         return res.status(404).json({ error: "Usuário não encontrado" });
       }
 
-      // Se não é forçado, verificar senha atual
-      if (!isForced && currentPassword) {
+      // 🔒 SEGURANÇA: Verificar se troca forçada é realmente permitida
+      // isForced só é válido se must_change_password for true no banco
+      const isReallyForced = isForced && profile.must_change_password === true;
+
+      if (!isReallyForced) {
+        // Não é primeiro acesso - exigir senha atual
+        if (!currentPassword) {
+          return res.status(400).json({ error: "Senha atual é obrigatória" });
+        }
+
         const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
           email: profile.email,
           password: currentPassword
