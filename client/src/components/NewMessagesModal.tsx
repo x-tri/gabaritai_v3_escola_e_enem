@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { Mail, Bell, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { authFetch } from '@/lib/authFetch';
 
 interface Message {
   id: string;
@@ -45,9 +46,7 @@ export function NewMessagesModal({ onClose, onViewAll }: NewMessagesModalProps) 
       }
 
       try {
-        const response = await fetch('/api/messages', {
-          credentials: 'include',
-        });
+        const response = await authFetch('/api/messages');
 
         if (!response.ok) return;
 
@@ -73,9 +72,8 @@ export function NewMessagesModal({ onClose, onViewAll }: NewMessagesModalProps) 
 
   const markAsRead = async (messageId: string) => {
     try {
-      await fetch(`/api/messages/${messageId}/read`, {
+      await authFetch(`/api/messages/${messageId}/read`, {
         method: 'PATCH',
-        credentials: 'include',
       });
     } catch (error) {
       console.error('Erro ao marcar como lida:', error);

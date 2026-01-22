@@ -15,6 +15,7 @@ import { MobileNavDrawer } from './MobileNavDrawer';
 import { cn } from '@/lib/utils';
 import { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { authFetch } from '@/lib/authFetch';
 
 export interface NavItemConfig {
   id: string;
@@ -43,9 +44,7 @@ export function TopNavbar({ items, activeItem, onItemClick, className }: TopNavb
       if (!profile || profile.role === 'super_admin') return;
 
       try {
-        const response = await fetch('/api/messages', {
-          credentials: 'include',
-        });
+        const response = await authFetch('/api/messages');
         if (response.ok) {
           const data = await response.json();
           setUnreadCount(data.unread_count || 0);

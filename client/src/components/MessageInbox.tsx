@@ -18,6 +18,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { authFetch } from '@/lib/authFetch';
 
 interface Message {
   id: string;
@@ -50,9 +51,7 @@ export function MessageInbox({
   const fetchMessages = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/messages', {
-        credentials: 'include',
-      });
+      const response = await authFetch('/api/messages');
 
       if (!response.ok) {
         throw new Error('Erro ao buscar mensagens');
@@ -84,9 +83,8 @@ export function MessageInbox({
   const markAsRead = async (messageId: string) => {
     try {
       setMarkingAsRead(messageId);
-      const response = await fetch(`/api/messages/${messageId}/read`, {
+      const response = await authFetch(`/api/messages/${messageId}/read`, {
         method: 'PATCH',
-        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -116,9 +114,8 @@ export function MessageInbox({
   const markAllAsRead = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/messages/read-all', {
+      const response = await authFetch('/api/messages/read-all', {
         method: 'PATCH',
-        credentials: 'include',
       });
 
       if (!response.ok) {
