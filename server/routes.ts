@@ -3695,6 +3695,34 @@ Para cada disciplina:
         console.log(`[PROJETOS] triScoresByArea mesclados: ${Object.keys(triScoresByAreaFinal).length} alunos`);
       }
 
+      // Mesclar questionContents (180 elementos) - Dia 1 tem Q1-90, Dia 2 tem Q91-180
+      let questionContentsFinal = questionContents || projetoExistente.questionContents;
+
+      if (mergeStudents && questionContents && projetoExistente.questionContents) {
+        // Criar mapa por questionNumber para merge eficiente
+        const questionContentsMap = new Map<number, { questionNumber: number; content: string; answer?: string }>();
+
+        // Adicionar existentes primeiro
+        for (const item of projetoExistente.questionContents) {
+          if (item && typeof item.questionNumber === 'number') {
+            questionContentsMap.set(item.questionNumber, item);
+          }
+        }
+
+        // Sobrescrever/adicionar novos
+        for (const item of questionContents) {
+          if (item && typeof item.questionNumber === 'number') {
+            questionContentsMap.set(item.questionNumber, item);
+          }
+        }
+
+        // Converter mapa para array ordenado por questionNumber
+        questionContentsFinal = Array.from(questionContentsMap.values())
+          .sort((a, b) => a.questionNumber - b.questionNumber);
+
+        console.log(`[PROJETOS] questionContents mesclados: ${questionContentsFinal.length} questões`);
+      }
+
       // Atualizar projeto no Supabase
       const { data: updatedData, error: updateError } = await supabaseAdmin
         .from('projetos')
@@ -3704,7 +3732,7 @@ Para cada disciplina:
           template: template || projetoExistente.template,
           students: studentsFinais,
           answer_key: answerKeyFinal,
-          question_contents: questionContents || projetoExistente.questionContents,
+          question_contents: questionContentsFinal,
           statistics: statistics || projetoExistente.statistics,
           tri_scores: triScoresFinal,
           tri_scores_by_area: triScoresByAreaFinal,
