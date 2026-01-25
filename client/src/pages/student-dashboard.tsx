@@ -759,7 +759,7 @@ export default function StudentDashboard() {
     setPasswordError(null);
 
     // Validations
-    if (!newPassword || !confirmPassword) {
+    if (!currentPassword || !newPassword || !confirmPassword) {
       setPasswordError('Preencha todos os campos');
       return;
     }
@@ -771,6 +771,11 @@ export default function StudentDashboard() {
 
     if (newPassword !== confirmPassword) {
       setPasswordError('As senhas não coincidem');
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordError('A nova senha deve ser diferente da atual');
       return;
     }
 
@@ -788,6 +793,7 @@ export default function StudentDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: profile.id,
+          currentPassword,
           newPassword,
           isForced: false
         }),
@@ -1621,11 +1627,22 @@ export default function StudentDashboard() {
               Alterar Senha
             </DialogTitle>
             <DialogDescription>
-              Digite sua nova senha. A senha deve ter pelo menos 6 caracteres.
+              Digite sua senha atual e escolha uma nova senha. A senha deve ter pelo menos 6 caracteres.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="currentPassword">Senha Atual</Label>
+              <Input
+                id="currentPassword"
+                type="password"
+                placeholder="••••••••"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="newPassword">Nova Senha</Label>
               <Input
@@ -1660,6 +1677,7 @@ export default function StudentDashboard() {
               variant="outline"
               onClick={() => {
                 setShowPasswordModal(false);
+                setCurrentPassword('');
                 setNewPassword('');
                 setConfirmPassword('');
                 setPasswordError(null);
