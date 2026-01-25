@@ -6572,6 +6572,11 @@ Para cada disciplina:
       let totalCount = 0;
       let totalLC = 0, totalCH = 0, totalCN = 0, totalMT = 0;
       let triCount = 0;
+      // Arrays para calcular min/max por área
+      const triLcValues: number[] = [];
+      const triChValues: number[] = [];
+      const triCnValues: number[] = [];
+      const triMtValues: number[] = [];
 
       results.forEach((r: any) => {
         if (r.turma) {
@@ -6589,6 +6594,10 @@ Para cada disciplina:
           totalCN += r.tri_cn || 0;
           totalMT += r.tri_mt || 0;
           triCount++;
+          triLcValues.push(r.tri_lc);
+          if (r.tri_ch != null) triChValues.push(r.tri_ch);
+          if (r.tri_cn != null) triCnValues.push(r.tri_cn);
+          if (r.tri_mt != null) triMtValues.push(r.tri_mt);
         }
       });
 
@@ -6730,10 +6739,26 @@ Para cada disciplina:
         },
         turmaRanking,
         desempenhoPorArea: {
-          lc: triCount > 0 ? totalLC / triCount : null,
-          ch: triCount > 0 ? totalCH / triCount : null,
-          cn: triCount > 0 ? totalCN / triCount : null,
-          mt: triCount > 0 ? totalMT / triCount : null,
+          lc: {
+            media: triCount > 0 ? totalLC / triCount : null,
+            min: triLcValues.length > 0 ? Math.min(...triLcValues) : null,
+            max: triLcValues.length > 0 ? Math.max(...triLcValues) : null,
+          },
+          ch: {
+            media: triCount > 0 ? totalCH / triCount : null,
+            min: triChValues.length > 0 ? Math.min(...triChValues) : null,
+            max: triChValues.length > 0 ? Math.max(...triChValues) : null,
+          },
+          cn: {
+            media: triCount > 0 ? totalCN / triCount : null,
+            min: triCnValues.length > 0 ? Math.min(...triCnValues) : null,
+            max: triCnValues.length > 0 ? Math.max(...triCnValues) : null,
+          },
+          mt: {
+            media: triCount > 0 ? totalMT / triCount : null,
+            min: triMtValues.length > 0 ? Math.min(...triMtValues) : null,
+            max: triMtValues.length > 0 ? Math.max(...triMtValues) : null,
+          },
         },
         performanceTri: {
           totalAlunosComTri,
@@ -6751,10 +6776,148 @@ Para cada disciplina:
         atencao,
         series: Array.from(seriesSet).sort(),
         turmas: Array.from(turmasSet).sort(),
+        // Dados para gráfico de dispersão Acertos vs TRI
+        dispersaoData: alunosComTri.map((a: any) => ({
+          nome: a.student_name,
+          acertos: a.correct_answers || 0,
+          tri: Math.round(a.triMedia),
+          turma: a.turma || 'Sem turma',
+        })),
       });
 
     } catch (error: any) {
       console.error("[ESCOLA DASHBOARD] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/escola/question-stats - Estatísticas por questão e conteúdo
+  // PROTEGIDO: Apenas school_admin e super_admin
+  // Busca dados da tabela projetos que tem o gabarito e conteúdos completos
+  app.get("/api/escola/question-stats", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const profile = (req as any).profile;
+
+      // 1. Buscar o projeto mais recente da tabela projetos
+      // A tabela projetos contém os dados completos (answer_key, question_contents, students)
+      const { data: projetos, error: projetosError } = await supabaseAdmin
+        .from("projetos")
+        .select("id, nome, answer_key, question_contents, students")
+        .order("updated_at", { ascending: false })
+        .limit(5);
+
+      if (projetosError) throw projetosError;
+
+      if (!projetos || projetos.length === 0) {
+        return res.json({ questionStats: [], contentStats: [], totalStudents: 0 });
+      }
+
+      // Usar o projeto mais recente que tenha dados
+      const projeto = projetos.find(p =>
+        (p.answer_key as any[])?.length > 0 &&
+        (p.students as any[])?.length > 0
+      ) || projetos[0];
+
+      const answerKey = (projeto.answer_key as string[]) || [];
+      const questionContents = (projeto.question_contents as any[]) || [];
+      const students = (projeto.students as any[]) || [];
+
+      console.log(`[ESCOLA QUESTION-STATS] Projeto: ${projeto.nome}, Answer Key: ${answerKey.length}, Contents: ${questionContents.length}, Students: ${students.length}`);
+
+      if (answerKey.length === 0 || students.length === 0) {
+        return res.json({ questionStats: [], contentStats: [], totalStudents: 0 });
+      }
+
+      const totalStudents = students.length;
+
+      // 2. Calcular estatísticas por questão (igual ao home.tsx)
+      const questionStats: Array<{
+        questionNumber: number;
+        correctAnswer: string;
+        correctCount: number;
+        correctPercentage: number;
+        content: string;
+        distribution: Record<string, number>;
+        blankCount: number;
+      }> = [];
+
+      for (let i = 0; i < answerKey.length; i++) {
+        const questionNumber = i + 1;
+        const correctAnswer = (answerKey[i] || '').toUpperCase();
+        // Buscar content pelo índice (questionContents está alinhado com answerKey)
+        const rawContent = questionContents[i];
+        const content = typeof rawContent === 'string' ? rawContent : (rawContent?.content || '');
+        let correctCount = 0;
+        let blankCount = 0;
+        const distribution: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+
+        students.forEach((student: any) => {
+          const answers = student.answers || [];
+          const answer = (answers[i] || '').toUpperCase().trim();
+
+          if (!answer || answer === '' || answer === 'X' || answer === '?') {
+            blankCount++;
+          } else if (['A', 'B', 'C', 'D', 'E'].includes(answer)) {
+            distribution[answer]++;
+            if (answer === correctAnswer) {
+              correctCount++;
+            }
+          }
+        });
+
+        // Usar totalStudents como denominador (igual home.tsx), não apenas respondentes
+        const correctPercentage = totalStudents > 0 ? Math.round((correctCount / totalStudents) * 100) : 0;
+
+        questionStats.push({
+          questionNumber: i + 1,
+          correctAnswer,
+          correctCount,
+          correctPercentage,
+          content,
+          distribution,
+          blankCount,
+        });
+      }
+
+      // 4. Calcular estatísticas por conteúdo
+      const contentMap = new Map<string, { total: number; errors: number; questions: number; attempts: number }>();
+
+      questionStats.forEach((stat) => {
+        const contentStr = typeof stat.content === 'string' ? stat.content : '';
+        if (contentStr && contentStr.trim()) {
+          const content = contentStr.trim();
+          const existing = contentMap.get(content) || { total: 0, errors: 0, questions: 0, attempts: 0 };
+          const respondentes = totalStudents - stat.blankCount;
+          const errors = respondentes - stat.correctCount;
+
+          existing.questions++;
+          existing.attempts += respondentes;
+          existing.errors += errors;
+          existing.total += respondentes;
+
+          contentMap.set(content, existing);
+        }
+      });
+
+      const contentStats = Array.from(contentMap.entries())
+        .map(([content, data]) => ({
+          content,
+          totalQuestions: data.questions,
+          totalAttempts: data.attempts,
+          totalErrors: data.errors,
+          errorPercentage: data.total > 0 ? Math.round((data.errors / data.total) * 100 * 10) / 10 : 0,
+        }))
+        .sort((a, b) => b.errorPercentage - a.errorPercentage);
+
+      res.json({
+        questionStats,
+        contentStats,
+        totalStudents,
+        examTitle: projeto.nome,
+      });
+
+    } catch (error: any) {
+      console.error("[ESCOLA QUESTION-STATS] Erro:", error);
       res.status(500).json({ error: error.message });
     }
   });

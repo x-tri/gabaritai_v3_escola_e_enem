@@ -18,11 +18,11 @@ import {
   Search, ChevronLeft, ChevronRight, Eye, Download,
   BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet,
   LayoutDashboard, ClipboardList, GraduationCap, LogOut,
-  AlertCircle, Award, BarChart3, Target
+  AlertCircle, Award, BarChart3, Target, Calculator
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  ResponsiveContainer, Cell, Legend
+  ResponsiveContainer, Cell, Legend, ScatterChart, Scatter
 } from 'recharts';
 
 // ============================================================================
@@ -74,20 +74,59 @@ interface AlunoTri {
   triMedia: number;
 }
 
+interface TriAreaStats {
+  media: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+interface DispersaoDataItem {
+  nome: string;
+  acertos: number;
+  tri: number;
+  turma: string;
+}
+
 interface DashboardData {
   stats: DashboardStats;
   turmaRanking: TurmaRanking[];
   desempenhoPorArea: {
-    lc: number | null;
-    ch: number | null;
-    cn: number | null;
-    mt: number | null;
+    lc: TriAreaStats;
+    ch: TriAreaStats;
+    cn: TriAreaStats;
+    mt: TriAreaStats;
   };
   performanceTri?: PerformanceTri;
   topAlunos: AlunoDestaque[];
   atencao: AlunoDestaque[];
   series: string[];
   turmas: string[];
+  dispersaoData?: DispersaoDataItem[];
+}
+
+interface QuestionStat {
+  questionNumber: number;
+  correctAnswer: string;
+  correctCount: number;
+  correctPercentage: number;
+  content: string;
+  distribution: Record<string, number>;
+  blankCount: number;
+}
+
+interface ContentStat {
+  content: string;
+  totalQuestions: number;
+  totalAttempts: number;
+  totalErrors: number;
+  errorPercentage: number;
+}
+
+interface QuestionStatsData {
+  questionStats: QuestionStat[];
+  contentStats: ContentStat[];
+  totalStudents: number;
+  examTitle?: string;
 }
 
 interface TurmaAluno {
@@ -315,6 +354,79 @@ function StatCard({ title, value, subtitle, icon: Icon, gradient, delay = 0 }: S
 }
 
 // ============================================================================
+// TRI AREA CARD COMPONENT - Cards de TRI por área do conhecimento
+// ============================================================================
+
+interface TriAreaCardProps {
+  title: string;
+  data: TriAreaStats;
+  color: string;
+  borderColor: string;
+  textColor: string;
+  bgColor: string;
+  barColor: string;
+}
+
+function TriAreaCard({ title, data, borderColor, textColor, bgColor, barColor }: TriAreaCardProps) {
+  const media = data?.media ?? 0;
+  const min = data?.min ?? 0;
+  const max = data?.max ?? 1000;
+
+  // Calcular posição da média na barra (0-1000 escala TRI)
+  const position = max > min ? ((media - min) / (max - min)) * 100 : 50;
+
+  return (
+    <div className={`rounded-2xl border-2 ${borderColor} bg-white dark:bg-gray-900 shadow-lg overflow-hidden`}>
+      <div className="p-5">
+        <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-2">{title}</h3>
+        <p className={`text-4xl font-bold ${textColor} mb-1`}>
+          {media ? media.toFixed(1) : '-'}
+        </p>
+        <p className="text-sm text-gray-500 mb-4">TRI</p>
+
+        {/* Barra de progresso */}
+        <div className="relative mb-4">
+          <div className={`h-3 ${bgColor} rounded-full overflow-hidden`}>
+            <div
+              className={`h-full ${barColor} rounded-full transition-all duration-500`}
+              style={{ width: `${Math.max(5, position)}%` }}
+            />
+          </div>
+          {/* Indicador da média */}
+          <div
+            className="absolute top-0 w-0.5 h-3 bg-gray-800 dark:bg-white"
+            style={{ left: `${position}%` }}
+          />
+        </div>
+
+        {/* Estatísticas */}
+        <p className="text-xs text-gray-500 mb-2">Estatísticas da Turma</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <p className="text-xs text-gray-400">Mínimo</p>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              {min ? min.toFixed(1) : '-'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400">Média</p>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              {media ? media.toFixed(1) : '-'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400">Máximo</p>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              {max ? max.toFixed(1) : '-'}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // TURMA CARD COMPONENT - NexLink Style
 // ============================================================================
 
@@ -520,6 +632,10 @@ export default function EscolaPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
 
+  // Question stats state
+  const [questionStatsData, setQuestionStatsData] = useState<QuestionStatsData | null>(null);
+  const [loadingQuestionStats, setLoadingQuestionStats] = useState(false);
+
   // Results state
   const [results, setResults] = useState<StudentResult[]>([]);
   const [loadingResults, setLoadingResults] = useState(false);
@@ -574,6 +690,21 @@ export default function EscolaPage() {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } finally {
       setLoadingDashboard(false);
+    }
+  }, [toast]);
+
+  // Fetch question stats
+  const fetchQuestionStats = useCallback(async () => {
+    try {
+      setLoadingQuestionStats(true);
+      const response = await authFetch('/api/escola/question-stats');
+      if (!response.ok) throw new Error('Erro ao buscar estatísticas de questões');
+      const data = await response.json();
+      setQuestionStatsData(data);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoadingQuestionStats(false);
     }
   }, [toast]);
 
@@ -696,6 +827,13 @@ export default function EscolaPage() {
       fetchListDownloads();
     }
   }, [activeTab, fetchListDownloads]);
+
+  // Load question stats when tab changes to "alunos" (Estatísticas TRI)
+  useEffect(() => {
+    if (activeTab === 'alunos' && !questionStatsData) {
+      fetchQuestionStats();
+    }
+  }, [activeTab, questionStatsData, fetchQuestionStats]);
 
   // Load turma alunos when modal opens
   useEffect(() => {
@@ -878,7 +1016,7 @@ export default function EscolaPage() {
               { value: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
               { value: 'resultados', label: 'Resultados', icon: ClipboardList },
               { value: 'turmas', label: 'Turmas', icon: GraduationCap },
-              { value: 'alunos', label: 'Alunos', icon: Users },
+              { value: 'alunos', label: 'Estatísticas TRI', icon: Calculator },
               { value: 'listas', label: 'Listas', icon: BookOpen },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -910,7 +1048,7 @@ export default function EscolaPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8">
         {/* Stat Cards */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <StatCard
             title="Total de Alunos"
             value={dashboardData?.stats.totalAlunos || 0}
@@ -936,12 +1074,20 @@ export default function EscolaPage() {
             delay={200}
           />
           <StatCard
+            title="TRI Geral"
+            value={dashboardData?.performanceTri?.triMediaGeral || '-'}
+            subtitle={dashboardData?.performanceTri ? `Min: ${dashboardData.performanceTri.triMin} | Max: ${dashboardData.performanceTri.triMax}` : 'Sem dados TRI'}
+            icon={Target}
+            gradient="from-purple-500 to-pink-600"
+            delay={300}
+          />
+          <StatCard
             title="Turmas / Séries"
             value={`${dashboardData?.stats.totalTurmas || 0} / ${dashboardData?.stats.totalSeries || 0}`}
             subtitle="Organização escolar"
             icon={School}
             gradient="from-[#F26A4B] to-[#E04E2D]"
-            delay={300}
+            delay={400}
           />
         </section>
 
@@ -953,44 +1099,44 @@ export default function EscolaPage() {
               {/* Ranking de Turmas */}
               <RankingCard turmas={dashboardData?.turmaRanking || []} />
 
-              {/* Gráfico TRI por Área */}
-              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-                <div className="p-6">
-                  <div className="flex items-center gap-2 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg">
-                      <BarChart2 className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">TRI Médio por Área</h3>
-                      <p className="text-xs text-gray-500">Desempenho médio por área do conhecimento</p>
-                    </div>
-                  </div>
-
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart
-                      data={[
-                        { area: 'LC', value: dashboardData?.desempenhoPorArea.lc || 0, label: 'Linguagens' },
-                        { area: 'CH', value: dashboardData?.desempenhoPorArea.ch || 0, label: 'C. Humanas' },
-                        { area: 'CN', value: dashboardData?.desempenhoPorArea.cn || 0, label: 'C. Natureza' },
-                        { area: 'MT', value: dashboardData?.desempenhoPorArea.mt || 0, label: 'Matemática' },
-                      ]}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="area" tick={{ fontSize: 12 }} />
-                      <YAxis domain={[0, 1000]} tick={{ fontSize: 11 }} />
-                      <RechartsTooltip
-                        formatter={(value: number, name, props) => [`${value.toFixed(0)}`, props.payload.label]}
-                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px' }}
-                      />
-                      <Bar dataKey="value" name="TRI" radius={[8, 8, 0, 0]}>
-                        <Cell fill={XTRI_COLORS.cyan} />
-                        <Cell fill={XTRI_COLORS.orange} />
-                        <Cell fill="#10b981" />
-                        <Cell fill="#6366f1" />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+              {/* Cards TRI por Área */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TriAreaCard
+                  title="Linguagens"
+                  data={dashboardData?.desempenhoPorArea?.lc || { media: null, min: null, max: null }}
+                  color="#33B5E5"
+                  borderColor="border-blue-200 dark:border-blue-800"
+                  textColor="text-blue-600 dark:text-blue-400"
+                  bgColor="bg-blue-100 dark:bg-blue-900/30"
+                  barColor="bg-blue-500"
+                />
+                <TriAreaCard
+                  title="Humanas"
+                  data={dashboardData?.desempenhoPorArea?.ch || { media: null, min: null, max: null }}
+                  color="#10b981"
+                  borderColor="border-emerald-200 dark:border-emerald-800"
+                  textColor="text-emerald-600 dark:text-emerald-400"
+                  bgColor="bg-emerald-100 dark:bg-emerald-900/30"
+                  barColor="bg-emerald-500"
+                />
+                <TriAreaCard
+                  title="Natureza"
+                  data={dashboardData?.desempenhoPorArea?.cn || { media: null, min: null, max: null }}
+                  color="#8b5cf6"
+                  borderColor="border-violet-200 dark:border-violet-800"
+                  textColor="text-violet-600 dark:text-violet-400"
+                  bgColor="bg-violet-100 dark:bg-violet-900/30"
+                  barColor="bg-violet-500"
+                />
+                <TriAreaCard
+                  title="Matemática"
+                  data={dashboardData?.desempenhoPorArea?.mt || { media: null, min: null, max: null }}
+                  color="#f59e0b"
+                  borderColor="border-amber-200 dark:border-amber-800"
+                  textColor="text-amber-600 dark:text-amber-400"
+                  bgColor="bg-amber-100 dark:bg-amber-900/30"
+                  barColor="bg-amber-500"
+                />
               </div>
 
               {/* TRI por Turma */}
@@ -1395,130 +1541,434 @@ export default function EscolaPage() {
             </div>
           </TabsContent>
 
-          {/* TAB: Alunos */}
-          <TabsContent value="alunos">
+          {/* TAB: Estatísticas TRI */}
+          <TabsContent value="alunos" className="space-y-6">
+            {/* Título */}
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                <Calculator className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Estatísticas TRI</h2>
+                <p className="text-sm text-gray-500">Desempenho por área do conhecimento</p>
+              </div>
+            </div>
+
+            {/* Cards TRI por Área - Grid 2x2 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TriAreaCard
+                title="Linguagens"
+                data={dashboardData?.desempenhoPorArea?.lc || { media: null, min: null, max: null }}
+                color="#33B5E5"
+                borderColor="border-blue-200 dark:border-blue-800"
+                textColor="text-blue-600 dark:text-blue-400"
+                bgColor="bg-blue-100 dark:bg-blue-900/30"
+                barColor="bg-blue-500"
+              />
+              <TriAreaCard
+                title="Humanas"
+                data={dashboardData?.desempenhoPorArea?.ch || { media: null, min: null, max: null }}
+                color="#10b981"
+                borderColor="border-emerald-200 dark:border-emerald-800"
+                textColor="text-emerald-600 dark:text-emerald-400"
+                bgColor="bg-emerald-100 dark:bg-emerald-900/30"
+                barColor="bg-emerald-500"
+              />
+              <TriAreaCard
+                title="Natureza"
+                data={dashboardData?.desempenhoPorArea?.cn || { media: null, min: null, max: null }}
+                color="#8b5cf6"
+                borderColor="border-violet-200 dark:border-violet-800"
+                textColor="text-violet-600 dark:text-violet-400"
+                bgColor="bg-violet-100 dark:bg-violet-900/30"
+                barColor="bg-violet-500"
+              />
+              <TriAreaCard
+                title="Matemática"
+                data={dashboardData?.desempenhoPorArea?.mt || { media: null, min: null, max: null }}
+                color="#f59e0b"
+                borderColor="border-amber-200 dark:border-amber-800"
+                textColor="text-amber-600 dark:text-amber-400"
+                bgColor="bg-amber-100 dark:bg-amber-900/30"
+                barColor="bg-amber-500"
+              />
+            </div>
+
+            {/* Gráfico Comparativo TRI por Área */}
             <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
               <div className="p-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Lista de Alunos</h2>
-                  <div className="flex flex-wrap gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Buscar por nome ou matrícula..."
-                        value={searchTerm}
-                        onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                        className="pl-10 w-64 border-[#33B5E5]/30 focus:ring-[#33B5E5]"
-                      />
-                    </div>
-                    <Select value={selectedSerie} onValueChange={(v) => { setSelectedSerie(v); setSelectedTurma('all'); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-40 border-[#33B5E5]/30">
-                        <SelectValue placeholder="Série" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas séries</SelectItem>
-                        {availableSeries.map(serie => (
-                          <SelectItem key={serie} value={serie}>{serie}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={selectedTurma} onValueChange={(v) => { setSelectedTurma(v); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-40 border-[#33B5E5]/30">
-                        <SelectValue placeholder="Turma" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas turmas</SelectItem>
-                        {availableTurmas.map(turma => (
-                          <SelectItem key={turma} value={turma!}>{turma}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      className="border-[#33B5E5] text-[#33B5E5] hover:bg-[#33B5E5] hover:text-white"
-                      onClick={() => {
-                        const params = new URLSearchParams();
-                        if (selectedTurma && selectedTurma !== 'all') params.set('turma', selectedTurma);
-                        window.open(`/api/admin/export-credentials?${params.toString()}`, '_blank');
-                      }}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Exportar Credenciais
-                    </Button>
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg">
+                    <BarChart2 className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">Comparativo TRI por Área</h3>
+                    <p className="text-xs text-gray-500">Média, mínimo e máximo de cada área</p>
                   </div>
                 </div>
 
-                {loadingResults ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={[
+                      {
+                        area: 'LC',
+                        label: 'Linguagens',
+                        media: dashboardData?.desempenhoPorArea?.lc?.media || 0,
+                        min: dashboardData?.desempenhoPorArea?.lc?.min || 0,
+                        max: dashboardData?.desempenhoPorArea?.lc?.max || 0,
+                      },
+                      {
+                        area: 'CH',
+                        label: 'Humanas',
+                        media: dashboardData?.desempenhoPorArea?.ch?.media || 0,
+                        min: dashboardData?.desempenhoPorArea?.ch?.min || 0,
+                        max: dashboardData?.desempenhoPorArea?.ch?.max || 0,
+                      },
+                      {
+                        area: 'CN',
+                        label: 'Natureza',
+                        media: dashboardData?.desempenhoPorArea?.cn?.media || 0,
+                        min: dashboardData?.desempenhoPorArea?.cn?.min || 0,
+                        max: dashboardData?.desempenhoPorArea?.cn?.max || 0,
+                      },
+                      {
+                        area: 'MT',
+                        label: 'Matemática',
+                        media: dashboardData?.desempenhoPorArea?.mt?.media || 0,
+                        min: dashboardData?.desempenhoPorArea?.mt?.min || 0,
+                        max: dashboardData?.desempenhoPorArea?.mt?.max || 0,
+                      },
+                    ]}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="area" tick={{ fontSize: 12 }} />
+                    <YAxis domain={[0, 1000]} tick={{ fontSize: 11 }} />
+                    <RechartsTooltip
+                      formatter={(value: number, name: string) => [value.toFixed(0), name === 'media' ? 'Média' : name === 'min' ? 'Mínimo' : 'Máximo']}
+                      contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px' }}
+                    />
+                    <Legend formatter={(value) => value === 'media' ? 'Média' : value === 'min' ? 'Mínimo' : 'Máximo'} />
+                    <Bar dataKey="min" name="min" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="media" name="media" fill="#33B5E5" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="max" name="max" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Resumo Geral de Performance */}
+            {dashboardData?.performanceTri && dashboardData.performanceTri.totalAlunosComTri > 0 && (
+              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                      <Target className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">Distribuição de Desempenho</h3>
+                      <p className="text-xs text-gray-500">Análise por faixas de TRI</p>
+                    </div>
+                  </div>
+
+                  {/* Cards de resumo */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <Card className="border-2 border-blue-200 dark:border-blue-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground mb-1">Total de Alunos</p>
+                            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{dashboardData.performanceTri.totalAlunosComTri}</p>
+                          </div>
+                          <Users className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-2 border-purple-200 dark:border-purple-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground mb-1">TRI Médio Geral</p>
+                            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{dashboardData.performanceTri.triMediaGeral}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Min: {dashboardData.performanceTri.triMin} • Max: {dashboardData.performanceTri.triMax}</p>
+                          </div>
+                          <BarChart3 className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-2 border-cyan-200 dark:border-cyan-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground mb-1">Taxa de Acertos</p>
+                            <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
+                              {dashboardData.stats.mediaAcertos ? `${Math.round((dashboardData.stats.mediaAcertos / 180) * 100)}%` : '-'}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">Média: {Math.round(dashboardData.stats.mediaAcertos || 0)} de 180</p>
+                          </div>
+                          <Target className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Distribuição por faixa */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card className="border-2 border-green-200 dark:border-green-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-muted-foreground mb-1">Acima da Média</p>
+                            <div className="flex items-baseline gap-2">
+                              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{dashboardData.performanceTri.alunosAcimaMedia}</p>
+                              <p className="text-sm text-muted-foreground">
+                                ({dashboardData.performanceTri.totalAlunosComTri > 0
+                                  ? Math.round((dashboardData.performanceTri.alunosAcimaMedia / dashboardData.performanceTri.totalAlunosComTri) * 100)
+                                  : 0}%)
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">TRI ≥ 600</p>
+                            {dashboardData.performanceTri.alunosAcimaMedia > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-2 h-6 text-xs"
+                                onClick={() => fetchAlunosPorTri("acima-media")}
+                              >
+                                Quem são?
+                              </Button>
+                            )}
+                          </div>
+                          <Trophy className="h-8 w-8 text-green-600 dark:text-green-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-2 border-orange-200 dark:border-orange-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-muted-foreground mb-1">Na Média</p>
+                            <div className="flex items-baseline gap-2">
+                              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{dashboardData.performanceTri.alunosEmMedia}</p>
+                              <p className="text-sm text-muted-foreground">
+                                ({dashboardData.performanceTri.totalAlunosComTri > 0
+                                  ? Math.round((dashboardData.performanceTri.alunosEmMedia / dashboardData.performanceTri.totalAlunosComTri) * 100)
+                                  : 0}%)
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">TRI 500-599</p>
+                            {dashboardData.performanceTri.alunosEmMedia > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-2 h-6 text-xs"
+                                onClick={() => fetchAlunosPorTri("em-media")}
+                              >
+                                Quem são?
+                              </Button>
+                            )}
+                          </div>
+                          <Award className="h-8 w-8 text-orange-600 dark:text-orange-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-2 border-red-200 dark:border-red-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-muted-foreground mb-1">Abaixo da Média</p>
+                            <div className="flex items-baseline gap-2">
+                              <p className="text-2xl font-bold text-red-600 dark:text-red-400">{dashboardData.performanceTri.alunosAbaixoMedia}</p>
+                              <p className="text-sm text-muted-foreground">
+                                ({dashboardData.performanceTri.totalAlunosComTri > 0
+                                  ? Math.round((dashboardData.performanceTri.alunosAbaixoMedia / dashboardData.performanceTri.totalAlunosComTri) * 100)
+                                  : 0}%)
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">TRI &lt; 500</p>
+                            {dashboardData.performanceTri.alunosAbaixoMedia > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-2 h-6 text-xs"
+                                onClick={() => fetchAlunosPorTri("abaixo-media")}
+                              >
+                                Quem são?
+                              </Button>
+                            )}
+                          </div>
+                          <AlertTriangle className="h-8 w-8 text-red-600 dark:text-red-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Gráfico de Dispersão: Acertos vs TRI */}
+            {dashboardData?.dispersaoData && dashboardData.dispersaoData.length > 0 && (
+              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shadow-lg">
+                      <TrendingUp className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">Dispersão: Acertos vs TRI</h3>
+                      <p className="text-xs text-gray-500">Relação entre número de acertos e nota TRI</p>
+                    </div>
+                  </div>
+
+                  <ResponsiveContainer width="100%" height={400}>
+                    <ScatterChart>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis
+                        type="number"
+                        dataKey="acertos"
+                        name="Acertos"
+                        label={{ value: "Número de Acertos", position: "insideBottom", offset: -5 }}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis
+                        type="number"
+                        dataKey="tri"
+                        name="TRI"
+                        domain={[0, 800]}
+                        label={{ value: "Nota TRI", angle: -90, position: "insideLeft" }}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <RechartsTooltip
+                        cursor={{ strokeDasharray: '3 3' }}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload as DispersaoDataItem;
+                            return (
+                              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-lg">
+                                <p className="font-semibold text-gray-900 dark:text-white">{data.nome}</p>
+                                <p className="text-xs text-gray-500">{data.turma}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300">Acertos: {data.acertos}</p>
+                                <p className="text-sm font-medium text-blue-600">TRI: {data.tri}</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Scatter
+                        name="Alunos"
+                        data={dashboardData.dispersaoData}
+                        fill="#33B5E5"
+                      />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Análise por Questão */}
+            <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
+                    <FileText className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">Análise por Questão</h3>
+                    <p className="text-xs text-gray-500">Percentual de acertos por questão{questionStatsData?.examTitle && ` - ${questionStatsData.examTitle}`}</p>
+                  </div>
+                </div>
+
+                {loadingQuestionStats ? (
                   <div className="flex justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
                   </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gray-50 dark:bg-gray-800">
-                            <TableHead>Aluno</TableHead>
-                            <TableHead>Matrícula</TableHead>
-                            <TableHead>Turma</TableHead>
-                            <TableHead className="text-center">Último Acertos</TableHead>
-                            <TableHead className="text-center">Ações</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {paginatedResults.map((result) => (
-                            <TableRow key={result.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                              <TableCell className="font-medium">{result.student_name}</TableCell>
-                              <TableCell>{result.student_number || '-'}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="border-[#33B5E5]/30">
-                                  {result.turma && result.turma !== 'null' ? result.turma : 'Sem turma'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-center font-bold">{result.correct_answers ?? '-'}</TableCell>
-                              <TableCell className="text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => result.student_number && setSelectedAlunoMatricula(result.student_number)}
-                                  disabled={!result.student_number}
-                                  className="text-[#33B5E5] hover:bg-[#33B5E5]/10"
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                ) : questionStatsData?.questionStats && questionStatsData.questionStats.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
+                    {questionStatsData.questionStats.map((q) => {
+                      const percentage = q.correctPercentage;
+                      const bgColor = percentage >= 70 ? 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700'
+                        : percentage >= 50 ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700'
+                        : 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
+                      const textColor = percentage >= 70 ? 'text-green-700 dark:text-green-400'
+                        : percentage >= 50 ? 'text-yellow-700 dark:text-yellow-400'
+                        : 'text-red-700 dark:text-red-400';
 
-                    {totalPages > 1 && (
-                      <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                        <p className="text-sm text-gray-500">Página {currentPage} de {totalPages}</p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={currentPage === 1}
-                            onClick={() => setCurrentPage(p => p - 1)}
-                            className="border-[#33B5E5]/30 hover:bg-[#33B5E5] hover:text-white"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={currentPage === totalPages}
-                            onClick={() => setCurrentPage(p => p + 1)}
-                            className="border-[#33B5E5]/30 hover:bg-[#33B5E5] hover:text-white"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
+                      return (
+                        <div
+                          key={q.questionNumber}
+                          className={`rounded-xl border-2 p-3 ${bgColor} transition-transform hover:scale-105`}
+                          title={q.content || `Questão ${q.questionNumber}`}
+                        >
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Q{q.questionNumber}</p>
+                          <p className={`text-2xl font-bold ${textColor}`}>{percentage}%</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate" title={q.content}>
+                            {q.content || '-'}
+                          </p>
                         </div>
-                      </div>
-                    )}
-                  </>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-center text-gray-500 py-8">Nenhum dado disponível</p>
+                )}
+              </div>
+            </div>
+
+            {/* Análise por Conteúdo - Conteúdos com Mais Erros */}
+            <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-lg">
+                    <AlertTriangle className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">Conteúdos com Mais Erros</h3>
+                    <p className="text-xs text-gray-500">Áreas que precisam de mais atenção</p>
+                  </div>
+                </div>
+
+                {loadingQuestionStats ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
+                  </div>
+                ) : questionStatsData?.contentStats && questionStatsData.contentStats.length > 0 ? (
+                  <div className="space-y-3">
+                    {questionStatsData.contentStats.slice(0, 10).map((content, index) => {
+                      const barColor = content.errorPercentage >= 50 ? 'bg-red-500'
+                        : content.errorPercentage >= 30 ? 'bg-orange-500'
+                        : 'bg-yellow-500';
+
+                      return (
+                        <div key={index} className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={content.content}>
+                                {content.content}
+                              </p>
+                              <span className="text-sm font-bold text-gray-900 dark:text-white ml-2">
+                                {content.errorPercentage.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${barColor} rounded-full transition-all duration-500`}
+                                style={{ width: `${Math.min(content.errorPercentage, 100)}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {content.totalQuestions} questões • {content.totalErrors} erros de {content.totalAttempts} respostas
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-center text-gray-500 py-8">Nenhum dado de conteúdo disponível</p>
                 )}
               </div>
             </div>
