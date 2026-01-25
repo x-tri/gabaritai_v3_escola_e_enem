@@ -715,7 +715,7 @@ export default function StudentDashboard() {
 
       try {
         setDetailsLoading(true);
-        const response = await fetch(`/api/student-dashboard-details/${profile.id}/${selectedExamId}`);
+        const response = await authFetch(`/api/student-dashboard-details/${profile.id}/${selectedExamId}`);
         const data = await response.json();
 
         if (data.success) {

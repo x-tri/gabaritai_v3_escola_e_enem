@@ -5547,59 +5547,101 @@ Para cada disciplina:
 
   // GET /api/student-answers/:studentId - Buscar resultados de um aluno
   // 🔒 PROTEGIDO: Requer autenticação (dados sensíveis de aluno)
+  // MIGRADO: Agora lê de projetos em vez de student_answers
   app.get("/api/student-answers/:studentId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId } = req.params;
 
-      // Tentar buscar por student_id primeiro
-      let { data, error } = await supabaseAdmin
-        .from("student_answers")
-        .select(`
-          *,
-          exams (id, title, template_type, created_at)
-        `)
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false });
+      // Buscar profile para pegar student_number (matrícula)
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("student_number, school_id")
+        .eq("id", studentId)
+        .single();
 
-      if (error) {
-        console.error("[STUDENT_ANSWERS] Erro ao buscar:", error);
-        return res.status(500).json({
-          error: "Erro ao buscar resultados",
-          });
+      if (profileError || !profile?.student_number) {
+        console.log(`[STUDENT_ANSWERS] Profile não encontrado ou sem matrícula para studentId: ${studentId}`);
+        return res.json({
+          success: true,
+          results: [],
+          total: 0
+        });
       }
 
-      // Se não encontrou por student_id, tentar por student_number
-      if (!data || data.length === 0) {
-        console.log(`[STUDENT_ANSWERS] Sem resultados por student_id, buscando por student_number...`);
+      const studentNumber = profile.student_number;
+      console.log(`[STUDENT_ANSWERS] Buscando resultados para matrícula: ${studentNumber}`);
 
-        // Buscar profile para pegar student_number
-        const { data: profile } = await supabaseAdmin
-          .from("profiles")
-          .select("student_number")
-          .eq("id", studentId)
-          .single();
+      // Buscar projetos que contenham este aluno (pela matrícula)
+      const { data: projetos, error: projetosError } = await supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, tri_scores_by_area, school_id, updated_at, created_at")
+        .order("updated_at", { ascending: false });
 
-        if (profile?.student_number) {
-          const { data: resultsByNumber } = await supabaseAdmin
-            .from("student_answers")
-            .select(`
-              *,
-              exams (id, title, template_type, created_at)
-            `)
-            .eq("student_number", profile.student_number)
-            .order("created_at", { ascending: false });
+      if (projetosError) {
+        console.error("[STUDENT_ANSWERS] Erro ao buscar projetos:", projetosError);
+        return res.status(500).json({ error: "Erro ao buscar resultados" });
+      }
 
-          if (resultsByNumber && resultsByNumber.length > 0) {
-            data = resultsByNumber;
-            console.log(`[STUDENT_ANSWERS] Encontrados ${data.length} resultados por student_number: ${profile.student_number}`);
-          }
+      // Encontrar o aluno em cada projeto pela matrícula
+      const results: any[] = [];
+
+      for (const projeto of projetos || []) {
+        const students = (projeto.students as any[]) || [];
+        const triScoresByArea = (projeto.tri_scores_by_area as Record<string, any>) || {};
+
+        // Buscar aluno pela matrícula
+        const studentData = students.find((s: any) =>
+          (s.studentNumber || s.matricula) === studentNumber
+        );
+
+        if (studentData) {
+          // Get TRI scores for this student
+          const studentTriScores = triScoresByArea[studentData.id] || {};
+
+          const tri_lc = studentTriScores.LC ?? studentTriScores.lc ?? studentData.areaScores?.LC ?? studentData.areaScores?.lc ?? null;
+          const tri_ch = studentTriScores.CH ?? studentTriScores.ch ?? studentData.areaScores?.CH ?? studentData.areaScores?.ch ?? null;
+          const tri_cn = studentTriScores.CN ?? studentTriScores.cn ?? studentData.areaScores?.CN ?? studentData.areaScores?.cn ?? null;
+          const tri_mt = studentTriScores.MT ?? studentTriScores.mt ?? studentData.areaScores?.MT ?? studentData.areaScores?.mt ?? null;
+
+          // Calculate overall TRI
+          const triValues = [tri_lc, tri_ch, tri_cn, tri_mt].filter(v => v != null) as number[];
+          const tri_score = triValues.length > 0 ? triValues.reduce((a, b) => a + b, 0) / triValues.length : null;
+
+          results.push({
+            id: studentData.id,
+            exam_id: projeto.id, // Use projeto ID as exam_id for compatibility
+            student_id: studentId,
+            student_number: studentNumber,
+            student_name: studentData.studentName || studentData.nome,
+            turma: studentData.turma || null,
+            answers: studentData.answers || [],
+            correct_answers: studentData.correctAnswers ?? 0,
+            wrong_answers: studentData.wrongAnswers ?? 0,
+            blank_answers: studentData.blankAnswers ?? 0,
+            score: studentData.score ?? null,
+            tri_score,
+            tri_lc,
+            tri_ch,
+            tri_cn,
+            tri_mt,
+            created_at: projeto.updated_at || projeto.created_at,
+            // Simulate exams object for frontend compatibility
+            exams: {
+              id: projeto.id,
+              title: projeto.nome,
+              template_type: "ENEM",
+              created_at: projeto.created_at
+            }
+          });
         }
       }
 
+      console.log(`[STUDENT_ANSWERS] Encontrados ${results.length} resultados em projetos para matrícula: ${studentNumber}`);
+
       res.json({
         success: true,
-        results: data || [],
-        total: data?.length || 0
+        results,
+        total: results.length
       });
 
     } catch (error: any) {
@@ -5612,114 +5654,111 @@ Para cada disciplina:
 
   // GET /api/student-dashboard-details/:studentId/:examId - Dados detalhados para dashboard do aluno
   // 🔒 PROTEGIDO: Requer autenticação (dados sensíveis de aluno)
+  // MIGRADO: Agora lê de projetos em vez de student_answers (examId = projetoId)
   app.get("/api/student-dashboard-details/:studentId/:examId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { studentId, examId } = req.params;
+      const { studentId, examId: projetoId } = req.params;
 
-      // 1. Buscar dados do aluno para este exam (primeiro por student_id)
-      let studentResult = null;
-
-      const { data: resultById, error: errorById } = await supabaseAdmin
-        .from("student_answers")
-        .select("*")
-        .eq("student_id", studentId)
-        .eq("exam_id", examId)
+      // 1. Buscar profile para pegar student_number (matrícula)
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("student_number")
+        .eq("id", studentId)
         .single();
 
-      if (resultById) {
-        studentResult = resultById;
-      } else {
-        // Fallback: buscar pelo student_number do profile
-        console.log(`[STUDENT_DASHBOARD_DETAILS] Buscando por student_id falhou, tentando por student_number...`);
-
-        // Buscar profile para pegar student_number
-        const { data: profile } = await supabaseAdmin
-          .from("profiles")
-          .select("student_number")
-          .eq("id", studentId)
-          .single();
-
-        if (profile?.student_number) {
-          const { data: resultByNumber } = await supabaseAdmin
-            .from("student_answers")
-            .select("*")
-            .eq("student_number", profile.student_number)
-            .eq("exam_id", examId)
-            .single();
-
-          if (resultByNumber) {
-            studentResult = resultByNumber;
-            console.log(`[STUDENT_DASHBOARD_DETAILS] Encontrado por student_number: ${profile.student_number}`);
-          }
-        }
+      if (profileError || !profile?.student_number) {
+        return res.status(404).json({ error: "Perfil do aluno não encontrado" });
       }
 
-      if (!studentResult) {
-        return res.status(404).json({ error: "Resultado do aluno não encontrado" });
-      }
+      const studentNumber = profile.student_number;
+      console.log(`[STUDENT_DASHBOARD_DETAILS] Buscando detalhes para matrícula: ${studentNumber}, projeto: ${projetoId}`);
 
-      // 2. Buscar dados do exam (gabarito, question_contents)
-      const { data: exam, error: examError } = await supabaseAdmin
-        .from("exams")
-        .select("id, title, template_type, total_questions, answer_key, question_contents")
-        .eq("id", examId)
+      // 2. Buscar projeto pelo ID
+      const { data: projeto, error: projetoError } = await supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, answer_key, question_contents, tri_scores_by_area, updated_at, created_at")
+        .eq("id", projetoId)
         .single();
 
-      if (examError || !exam) {
+      if (projetoError || !projeto) {
+        console.error("[STUDENT_DASHBOARD_DETAILS] Projeto não encontrado:", projetoError);
         return res.status(404).json({ error: "Prova não encontrada" });
       }
 
-      // 3. Buscar TODOS os resultados da turma para este exam (para calcular dificuldade e comparação)
-      const { data: allResults, error: allError } = await supabaseAdmin
-        .from("student_answers")
-        .select("id, student_name, student_number, turma, answers, correct_answers, tri_score, tri_lc, tri_ch, tri_cn, tri_mt")
-        .eq("exam_id", examId);
+      const students = (projeto.students as any[]) || [];
+      const triScoresByArea = (projeto.tri_scores_by_area as Record<string, any>) || {};
+      const answerKey = (projeto.answer_key as string[]) || [];
+      const questionContents = (projeto.question_contents as any[]) || [];
 
-      if (allError) {
-        console.error("[STUDENT_DASHBOARD_DETAILS] Erro ao buscar turma:", allError);
+      // 3. Encontrar o aluno atual pela matrícula
+      const studentData = students.find((s: any) =>
+        (s.studentNumber || s.matricula) === studentNumber
+      );
+
+      if (!studentData) {
+        return res.status(404).json({ error: "Resultado do aluno não encontrado neste projeto" });
       }
 
-      const turmaResults = allResults || [];
-      const totalStudents = turmaResults.length;
-      let answerKey = exam.answer_key || [];
-      let questionContents = exam.question_contents || [];
+      // Get TRI scores for this student
+      const studentTriScores = triScoresByArea[studentData.id] || {};
+      const tri_lc = studentTriScores.LC ?? studentTriScores.lc ?? studentData.areaScores?.LC ?? studentData.areaScores?.lc ?? null;
+      const tri_ch = studentTriScores.CH ?? studentTriScores.ch ?? studentData.areaScores?.CH ?? studentData.areaScores?.ch ?? null;
+      const tri_cn = studentTriScores.CN ?? studentTriScores.cn ?? studentData.areaScores?.CN ?? studentData.areaScores?.cn ?? null;
+      const tri_mt = studentTriScores.MT ?? studentTriScores.mt ?? studentData.areaScores?.MT ?? studentData.areaScores?.mt ?? null;
 
-      console.log(`[STUDENT_DASHBOARD_DETAILS] examId=${examId}`);
+      const triValues = [tri_lc, tri_ch, tri_cn, tri_mt].filter(v => v != null) as number[];
+      const tri_score = triValues.length > 0 ? triValues.reduce((a, b) => a + b, 0) / triValues.length : null;
+
+      // Build studentResult in the format expected by frontend
+      const studentResult = {
+        id: studentData.id,
+        student_id: studentId,
+        student_number: studentNumber,
+        student_name: studentData.studentName || studentData.nome,
+        turma: studentData.turma || null,
+        answers: studentData.answers || [],
+        correct_answers: studentData.correctAnswers ?? 0,
+        wrong_answers: studentData.wrongAnswers ?? 0,
+        blank_answers: studentData.blankAnswers ?? 0,
+        score: studentData.score ?? null,
+        tri_score,
+        tri_lc,
+        tri_ch,
+        tri_cn,
+        tri_mt,
+        created_at: projeto.updated_at || projeto.created_at
+      };
+
+      // 4. Build turmaResults from all students in projeto
+      const turmaResults = students.map((s: any) => {
+        const sTri = triScoresByArea[s.id] || {};
+        return {
+          id: s.id,
+          student_name: s.studentName || s.nome,
+          student_number: s.studentNumber || s.matricula,
+          turma: s.turma || null,
+          answers: s.answers || [],
+          correct_answers: s.correctAnswers ?? 0,
+          tri_score: null, // Will calculate below
+          tri_lc: sTri.LC ?? sTri.lc ?? s.areaScores?.LC ?? s.areaScores?.lc ?? null,
+          tri_ch: sTri.CH ?? sTri.ch ?? s.areaScores?.CH ?? s.areaScores?.ch ?? null,
+          tri_cn: sTri.CN ?? sTri.cn ?? s.areaScores?.CN ?? s.areaScores?.cn ?? null,
+          tri_mt: sTri.MT ?? sTri.mt ?? s.areaScores?.MT ?? s.areaScores?.mt ?? null
+        };
+      });
+
+      // Calculate tri_score for each student
+      turmaResults.forEach((r: any) => {
+        const vals = [r.tri_lc, r.tri_ch, r.tri_cn, r.tri_mt].filter(v => v != null);
+        r.tri_score = vals.length > 0 ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : null;
+      });
+
+      const totalStudents = turmaResults.length;
+
+      console.log(`[STUDENT_DASHBOARD_DETAILS] projetoId=${projetoId}`);
       console.log(`[STUDENT_DASHBOARD_DETAILS] totalStudents=${totalStudents}`);
       console.log(`[STUDENT_DASHBOARD_DETAILS] answerKey.length=${answerKey.length}`);
-
-      // Se answerKey estiver vazio, tentar buscar do projeto mais recente
-      if (answerKey.length === 0) {
-        console.log(`[STUDENT_DASHBOARD_DETAILS] answerKey vazio, buscando de projetos...`);
-
-        // Buscar projeto mais recente com mesmo número de alunos
-        const { data: projetos } = await supabaseAdmin
-          .from('projetos')
-          .select('answer_key, question_contents, students')
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (projetos && projetos.length > 0) {
-          // Encontrar projeto com número similar de alunos
-          const projetoMatch = projetos.find(p => {
-            const pStudents = (p.students as any[]) || [];
-            return Math.abs(pStudents.length - totalStudents) <= 2;
-          });
-
-          if (projetoMatch) {
-            answerKey = projetoMatch.answer_key || [];
-            questionContents = projetoMatch.question_contents || [];
-            console.log(`[STUDENT_DASHBOARD_DETAILS] Encontrado answerKey do projeto: ${answerKey.length} questões`);
-            console.log(`[STUDENT_DASHBOARD_DETAILS] questionContents.length=${questionContents.length}`);
-            if (questionContents.length > 0) {
-              console.log(`[STUDENT_DASHBOARD_DETAILS] questionContents[0]=`, JSON.stringify(questionContents[0]));
-            }
-          }
-        }
-      }
-
-      // Debug: verificar questionContents
-      console.log(`[STUDENT_DASHBOARD_DETAILS] Final questionContents.length=${questionContents.length}`);
+      console.log(`[STUDENT_DASHBOARD_DETAILS] questionContents.length=${questionContents.length}`);
 
       // 4. Calcular dificuldade de cada questão (% de acertos da turma)
       const questionDifficulty: Array<{
@@ -5884,10 +5923,10 @@ Para cada disciplina:
         success: true,
         studentResult,
         exam: {
-          id: exam.id,
-          title: exam.title,
-          templateType: exam.template_type,
-          totalQuestions: exam.total_questions
+          id: projeto.id,
+          title: projeto.nome,
+          templateType: "ENEM",
+          totalQuestions: answerKey.length
         },
         answerKey,
         questionContents,
@@ -7568,9 +7607,10 @@ Para cada disciplina:
 
   // GET /api/student/study-plan/:studentId/:examId - Buscar/Gerar plano de estudos
   // PROTEGIDO: Alunos podem ver seus próprios dados, admins podem ver todos
+  // MIGRADO: Agora lê de projetos em vez de student_answers (examId = projetoId)
   app.get("/api/student/study-plan/:studentId/:examId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { studentId, examId } = req.params;
+      const { studentId, examId: projetoId } = req.params;
 
       // 1. Buscar student_number do profile (studentId = profile.id)
       const { data: profile } = await supabaseAdmin
@@ -7579,37 +7619,63 @@ Para cada disciplina:
         .eq("id", studentId)
         .single();
 
-      // 2. Buscar TRI do aluno por área usando student_number OU student_id
-      let studentResult = null;
-      let studentError = null;
-
-      if (profile?.student_number) {
-        // Buscar por student_number (mais confiável)
-        const result = await supabaseAdmin
-          .from("student_answers")
-          .select("tri_score, tri_lc, tri_ch, tri_cn, tri_mt, student_name, student_number")
-          .eq("student_number", profile.student_number)
-          .eq("exam_id", examId)
-          .single();
-        studentResult = result.data;
-        studentError = result.error;
+      if (!profile?.student_number) {
+        return res.status(404).json({ error: "Perfil do aluno não encontrado" });
       }
 
-      // Fallback: tentar por student_id
-      if (!studentResult) {
-        const result = await supabaseAdmin
-          .from("student_answers")
-          .select("tri_score, tri_lc, tri_ch, tri_cn, tri_mt, student_name, student_number")
-          .eq("student_id", studentId)
-          .eq("exam_id", examId)
-          .single();
-        studentResult = result.data;
-        studentError = result.error;
+      const studentNumber = profile.student_number;
+      console.log(`[STUDY_PLAN] Buscando matrícula: ${studentNumber}, projeto: ${projetoId}`);
+
+      // 2. Buscar projeto pelo ID
+      const { data: projeto, error: projetoError } = await supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, tri_scores_by_area")
+        .eq("id", projetoId)
+        .single();
+
+      if (projetoError || !projeto) {
+        console.log(`[STUDY_PLAN] Projeto não encontrado: ${projetoId}`, projetoError);
+        return res.status(404).json({ error: "Projeto não encontrado" });
       }
 
-      if (studentError || !studentResult) {
-        return res.status(404).json({ error: "Resultado do aluno não encontrado" });
+      const students = (projeto.students as any[]) || [];
+      const triScoresByArea = (projeto.tri_scores_by_area as Record<string, any>) || {};
+      console.log(`[STUDY_PLAN] Projeto ${projeto.nome} tem ${students.length} alunos`);
+
+      // 3. Encontrar o aluno pela matrícula
+      const studentData = students.find((s: any) =>
+        (s.studentNumber || s.matricula) === studentNumber
+      );
+
+      if (!studentData) {
+        // Debug: mostrar algumas matrículas para comparação
+        const sampleNumbers = students.slice(0, 5).map((s: any) => s.studentNumber || s.matricula);
+        console.log(`[STUDY_PLAN] Aluno ${studentNumber} NÃO encontrado. Sample: ${sampleNumbers.join(', ')}`);
+        return res.status(404).json({ error: "Resultado do aluno não encontrado neste projeto" });
       }
+
+      console.log(`[STUDY_PLAN] Aluno encontrado: ${studentData.studentName || studentData.nome}`);
+
+      // Get TRI scores for this student
+      const studentTriScores = triScoresByArea[studentData.id] || {};
+      const tri_lc = studentTriScores.LC ?? studentTriScores.lc ?? studentData.areaScores?.LC ?? studentData.areaScores?.lc ?? null;
+      const tri_ch = studentTriScores.CH ?? studentTriScores.ch ?? studentData.areaScores?.CH ?? studentData.areaScores?.ch ?? null;
+      const tri_cn = studentTriScores.CN ?? studentTriScores.cn ?? studentData.areaScores?.CN ?? studentData.areaScores?.cn ?? null;
+      const tri_mt = studentTriScores.MT ?? studentTriScores.mt ?? studentData.areaScores?.MT ?? studentData.areaScores?.mt ?? null;
+
+      const triValues = [tri_lc, tri_ch, tri_cn, tri_mt].filter(v => v != null) as number[];
+      const tri_score = triValues.length > 0 ? triValues.reduce((a, b) => a + b, 0) / triValues.length : null;
+
+      // Build studentResult in expected format
+      const studentResult = {
+        tri_score,
+        tri_lc,
+        tri_ch,
+        tri_cn,
+        tri_mt,
+        student_name: studentData.studentName || studentData.nome,
+        student_number: studentNumber
+      };
 
       const areas = [
         { code: 'LC', name: 'Linguagens', tri: studentResult.tri_lc },
