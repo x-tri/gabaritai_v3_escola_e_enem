@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { authFetch } from '@/lib/authFetch';
+import { logger } from '@/lib/logger';
 
 interface ChangePasswordModalProps {
   open: boolean;
@@ -26,12 +27,7 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  console.log('[ChangePasswordModal] Renderizado com props:', {
-    open,
-    isForced,
-    isFirstLogin,
-    userId
-  });
+  logger.log('[ChangePasswordModal] Rendered with props:', { open, isForced, isFirstLogin });
 
   const validatePassword = (password: string): string | null => {
     if (password.length < 6) {
@@ -70,14 +66,7 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
 
     const finalCurrentPassword = (isForced && isFirstLogin) ? 'SENHA123' : currentPassword;
 
-    console.log('[ChangePasswordModal] DEBUG:', {
-      userId,
-      isForced,
-      isFirstLogin,
-      currentPassword: currentPassword ? '***' : 'empty',
-      finalCurrentPassword: finalCurrentPassword ? '***' : 'empty',
-      newPassword: newPassword ? '***' : 'empty'
-    });
+    logger.log('[ChangePasswordModal] Submitting password change');
 
     try {
       const response = await authFetch('/api/profile/change-password', {
@@ -121,7 +110,7 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5" />
-            {isFirstLogin ? 'Alterar Senha (First)' : (isForced ? 'Alterar Senha Obrigatório (Forced)' : 'Alterar Senha [CÓDIGO NOVO v2.0]')}
+            Alterar Senha
           </DialogTitle>
           <DialogDescription>
             {isFirstLogin

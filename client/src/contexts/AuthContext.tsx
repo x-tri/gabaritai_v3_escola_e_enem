@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { logger } from '@/lib/logger';
 import type { Profile } from '@shared/database.types';
 import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 
@@ -52,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listener para mudanças de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[AuthContext] Auth state changed:', event);
+        logger.log('[AuthContext] Auth state changed:', event);
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user && session) {
@@ -68,13 +69,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function fetchProfile(userId: string, sessionParam?: Session | null) {
-    console.log('[AuthContext] Fetching profile for:', userId);
+    logger.log('[AuthContext] Fetching profile for:', userId);
 
     try {
       // Usar sessão passada como parâmetro OU buscar nova
       let accessToken = sessionParam?.access_token;
       if (!accessToken) {
-        console.log('[AuthContext] No session param, fetching from getSession...');
+        logger.log('[AuthContext] No session param, fetching from getSession...');
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         accessToken = currentSession?.access_token;
       }
@@ -101,20 +102,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
-      console.log('[AuthContext] Profile loaded:', data?.role);
+      logger.log('[AuthContext] Profile loaded:', data?.role);
 
       if (data && data.id) {
         setProfile(data);
         // Verificar se precisa forçar troca de senha
-        console.log('[AuthContext] Verificando must_change_password:', data.must_change_password);
+        logger.log('[AuthContext] Verificando must_change_password:', data.must_change_password);
         if (data.must_change_password) {
-          console.log('[AuthContext] Mostrando modal de troca de senha forçada');
+          logger.log('[AuthContext] Mostrando modal de troca de senha forcada');
           setShowForceChangePassword(true);
         } else {
-          console.log('[AuthContext] Não precisa trocar senha');
+          logger.log('[AuthContext] Nao precisa trocar senha');
         }
       } else {
-        console.warn('[AuthContext] Profile not found for userId:', userId);
+        logger.warn('[AuthContext] Profile not found for userId:', userId);
         setProfile(null);
       }
     } catch (error: any) {
@@ -125,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setProfile(null);
     } finally {
-      console.log('[AuthContext] Setting loading to false');
+      logger.log('[AuthContext] Setting loading to false');
       setLoading(false);
     }
   }
@@ -187,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isStudent = profile?.role === 'student';
 
   const handleForcePasswordChangeSuccess = async () => {
-    console.log('[AuthContext] Senha alterada com sucesso, fechando modal e recarregando profile');
+    logger.log('[AuthContext] Senha alterada com sucesso, fechando modal e recarregando profile');
     setShowForceChangePassword(false);
     // Recarregar profile para atualizar must_change_password
     if (user && session) {

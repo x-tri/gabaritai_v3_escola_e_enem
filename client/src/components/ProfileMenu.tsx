@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { logger } from '@/lib/logger';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +20,7 @@ export function ProfileMenu() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
 
-  console.log('[ProfileMenu] CÓDIGO NOVO CARREGADO - v2.0');
+  logger.log('[ProfileMenu] Component loaded - v2.0');
 
   if (!profile) return null;
 
@@ -66,7 +67,7 @@ export function ProfileMenu() {
             Meu Perfil
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => {
-            console.log('[ProfileMenu] Abrindo modal com isForced=false e isFirstLogin=false');
+            logger.log('[ProfileMenu] Opening change password modal');
             setShowChangePassword(true);
           }}>
             <Lock className="h-4 w-4 mr-2" />

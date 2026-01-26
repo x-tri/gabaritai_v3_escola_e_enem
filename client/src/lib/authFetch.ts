@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { logger } from './logger';
 
 /**
  * Fetch autenticado - adiciona token JWT do Supabase automaticamente
@@ -15,7 +16,7 @@ export async function authFetch(
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`);
   } else {
-    console.warn('[authFetch] No active session found during request to:', url);
+    logger.warn('[authFetch] No active session found during request to:', url);
   }
 
   // Timeout de 30 segundos por padrão (se não houver signal já definido)
