@@ -146,10 +146,10 @@ export function parseStudentCSV(csvContent: string): StudentCSVRow[] {
     columns: true,
     skip_empty_lines: true,
     trim: true,
-  });
+  }) as Record<string, string>[];
 
   // Normalizar colunas e extrair dados
-  const students: StudentCSVRow[] = records.map((row: Record<string, string>) => {
+  const students: StudentCSVRow[] = records.map((row) => {
     const normalized: Record<string, string> = {};
 
     for (const [key, value] of Object.entries(row)) {
@@ -433,7 +433,10 @@ async function generateAnswerSheetPage(
   });
 
   // QR Code (canto superior direito)
-  const qrDataUrl = await generateQRCodeDataURL(student.sheet_code);
+  // Incluir dia no QR: -D1 para DIA 1 (1-90), -D2 para DIA 2 (91-180)
+  const day = startNumber === 1 ? 1 : 2;
+  const qrContent = `${student.sheet_code}-D${day}`;
+  const qrDataUrl = await generateQRCodeDataURL(qrContent);
   const qrImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');
   const qrImage = await pdfDoc.embedPng(qrImageBytes);
 

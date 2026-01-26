@@ -44,7 +44,7 @@ export function ExamConfigurationWizard({
 
   const [name, setName] = useState("");
   const [totalQuestions, setTotalQuestions] = useState(20);
-  const [alternativesCount, setAlternativesCount] = useState(5);
+  const [alternativesCount, setAlternativesCount] = useState<4 | 5>(5);
   const [maxScoreTCT, setMaxScoreTCT] = useState(10.0);
   const [usesTRI, setUsesTRI] = useState(false);
   const [usesAdjustedTRI, setUsesAdjustedTRI] = useState(false);

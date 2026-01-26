@@ -3684,22 +3684,22 @@ export default function Home() {
     // MESCLAR alunos em vez de substituir (evita perder alunos já processados)
     setStudents(prev => {
       // Criar Set de matrículas existentes para evitar duplicatas
-      const matriculasExistentes = new Set(prev.map(s => s.matricula || s.studentNumber));
+      const matriculasExistentes = new Set(prev.map(s => (s as any).matricula || s.studentNumber));
 
       // Filtrar alunos do save que não existem ainda
-      const novosAlunos = avaliacao.students.filter(s => {
-        const matricula = s.matricula || s.studentNumber;
+      const novosAlunos = (avaliacao.students || []).filter(s => {
+        const matricula = (s as any).matricula || s.studentNumber;
         return !matriculasExistentes.has(matricula);
       });
 
-      console.log(`[Histórico] Mesclando: ${prev.length} existentes + ${novosAlunos.length} novos (${avaliacao.students.length - novosAlunos.length} duplicatas ignoradas)`);
+      console.log(`[Histórico] Mesclando: ${prev.length} existentes + ${novosAlunos.length} novos (${(avaliacao.students || []).length - novosAlunos.length} duplicatas ignoradas)`);
 
       // Retornar alunos existentes + novos
       return [...prev, ...novosAlunos];
     });
 
     // Gabarito e conteúdos: só atualiza se não tiver ainda
-    setAnswerKey(prev => prev.length > 0 ? prev : avaliacao.answerKey);
+    setAnswerKey(prev => prev.length > 0 ? prev : (avaliacao.answerKey || []));
     setQuestionContents(prev => prev.length > 0 ? prev : (avaliacao.questionContents || []));
 
     // MESCLAR TRI scores (não substituir)

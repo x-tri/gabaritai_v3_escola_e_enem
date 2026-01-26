@@ -884,7 +884,7 @@ export default function EscolaPage() {
     const serieNumber = extractSerieNumber(turma);
     if (!serieNumber) return false;
 
-    return allowedSeries.some(allowed => {
+    return allowedSeries.some((allowed: string) => {
       const allowedNumber = allowed.match(/(\d)/)?.[1];
       return allowedNumber === serieNumber;
     });

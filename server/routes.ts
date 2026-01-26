@@ -3277,7 +3277,7 @@ Para cada disciplina:
 
       // Filtrar por school_id se fornecido
       if (school_id) {
-        query = query.eq("school_id", school_id);
+        query = query.eq("school_id", school_id as string);
       }
 
       const { data: exams, error: examsError } = await query;
@@ -7416,20 +7416,28 @@ Para cada disciplina:
       // Converter para formato do ExcelExporter
       const students = Object.values(studentBest)
         .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
-        .map((r: any) => ({
-          id: r.id,
-          studentNumber: r.student_number || "",
-          studentName: r.student_name || "",
-          turma: r.turma,
-          answers: r.answers || [],
-          correctAnswers: r.correct_answers || 0,
-          wrongAnswers: r.wrong_answers || 0,
-          blankAnswers: r.blank_answers || 0,
-          score: r.correct_answers ? (r.correct_answers / 90) * 10 : 0, // TCT score
-          confidence: r.confidence || 0,
-          pageNumber: 1,
-          areaCorrectAnswers: calculateAreaCorrectAnswers(r.answers || [], answerKey),
-        }));
+        .map((r: any) => {
+          const areaCorrect = calculateAreaCorrectAnswers(r.answers || [], answerKey);
+          return {
+            id: r.id,
+            studentNumber: r.student_number || "",
+            studentName: r.student_name || "",
+            turma: r.turma,
+            answers: r.answers || [],
+            correctAnswers: r.correct_answers || 0,
+            wrongAnswers: r.wrong_answers || 0,
+            blankAnswers: r.blank_answers || 0,
+            score: r.correct_answers ? (r.correct_answers / 90) * 10 : 0, // TCT score
+            confidence: r.confidence || 0,
+            pageNumber: 1,
+            areaCorrectAnswers: {
+              LC: areaCorrect.LC ?? 0,
+              CH: areaCorrect.CH ?? 0,
+              CN: areaCorrect.CN ?? 0,
+              MT: areaCorrect.MT ?? 0,
+            },
+          };
+        });
 
       // Preparar TRI scores
       const triScores = new Map<string, number>();
@@ -7515,15 +7523,15 @@ Para cada disciplina:
 
       const aluno = {
         nome: results[0].student_name,
-        matricula: results[0].student_number,
-        turma: results[0].turma,
+        matricula: results[0].student_number || "",
+        turma: results[0].turma || "",
       };
 
       // Buscar média da turma para comparação
       const { data: turmaAnswers } = await supabaseAdmin
         .from("student_answers")
         .select("correct_answers, tri_lc, tri_ch, tri_cn, tri_mt")
-        .eq("turma", aluno.turma);
+        .eq("turma", aluno.turma || "");
 
       let mediaTurma = { acertos: 0, lc: 0, ch: 0, cn: 0, mt: 0 };
       if (turmaAnswers && turmaAnswers.length > 0) {
@@ -7875,7 +7883,7 @@ Para cada disciplina:
             .upsert({
               student_id: studentId,
               student_number: studentResult.student_number,
-              exam_id: examId,
+              exam_id: projetoId,
               area: plan.area,
               tri_atual: plan.tri_atual,
               tri_faixa: plan.tri_faixa,
@@ -7983,11 +7991,18 @@ Para cada disciplina:
       }
 
       // 3. Atualizar contador de downloads
+      // First get current count, then increment
+      const { data: currentRelease } = await supabaseAdmin
+        .from("student_list_releases")
+        .select("download_count")
+        .eq("id", release.id)
+        .single();
+
       await supabaseAdmin
         .from("student_list_releases")
         .update({
           downloaded_at: new Date().toISOString(),
-          download_count: supabaseAdmin.rpc('increment', { row_id: release.id })
+          download_count: (currentRelease?.download_count || 0) + 1
         })
         .eq("id", release.id);
 
@@ -8501,9 +8516,8 @@ Para cada disciplina:
       // 1. Deletar todas as respostas vinculadas
       const { count: answersDeleted, error: answersError } = await supabaseAdmin
         .from("student_answers")
-        .delete()
-        .eq("exam_id", id)
-        .select("*", { count: "exact", head: true });
+        .delete({ count: "exact" })
+        .eq("exam_id", id);
 
       if (answersError) {
         console.error("[DELETE SIMULADO] Erro ao deletar respostas:", answersError);
@@ -8705,7 +8719,7 @@ Para cada disciplina:
         .order("created_at", { ascending: false });
 
       if (school_id) {
-        query = query.eq("school_id", school_id);
+        query = query.eq("school_id", school_id as string);
       }
 
       const { data: coordinators, error } = await query;
@@ -8880,7 +8894,7 @@ Para cada disciplina:
           filter_school_ids: filter_school_ids || null,
           filter_turmas: filter_turmas || null,
           filter_series: filter_series || null,
-          created_by: authReq.user.id,
+          created_by: authReq.user!.id,
           expires_at: expiresAt.toISOString(),
         })
         .select()
@@ -9059,7 +9073,7 @@ Para cada disciplina:
             expires_at
           )
         `)
-        .eq('recipient_id', authReq.user.id)
+        .eq('recipient_id', authReq.user!.id)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -9106,7 +9120,7 @@ Para cada disciplina:
         .from('message_recipients')
         .update({ read_at: new Date().toISOString() })
         .eq('id', id)
-        .eq('recipient_id', authReq.user.id);
+        .eq('recipient_id', authReq.user!.id);
 
       if (error) {
         console.error("[MESSAGES] Erro ao marcar como lida:", error);
@@ -9132,7 +9146,7 @@ Para cada disciplina:
       const { error } = await supabaseAdmin
         .from('message_recipients')
         .update({ read_at: new Date().toISOString() })
-        .eq('recipient_id', authReq.user.id)
+        .eq('recipient_id', authReq.user!.id)
         .is('read_at', null);
 
       if (error) {
@@ -9442,7 +9456,7 @@ Para cada disciplina:
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
         .select("id, school_id, turma, role")
-        .eq("id", authReq.user.id)
+        .eq("id", authReq.user!.id)
         .single();
 
       if (profileError || !profile) {
@@ -9502,7 +9516,7 @@ Para cada disciplina:
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
         .select("school_id, role")
-        .eq("id", authReq.user.id)
+        .eq("id", authReq.user!.id)
         .single();
 
       if (profileError || !profile) {
@@ -9519,11 +9533,11 @@ Para cada disciplina:
           .select("id, titulo, area, tri_min, tri_max, ordem");
 
         if (area) {
-          listasQuery = listasQuery.eq("area", area);
+          listasQuery = listasQuery.eq("area", area as string);
         }
 
         if (listId) {
-          listasQuery = listasQuery.eq("id", listId);
+          listasQuery = listasQuery.eq("id", listId as string);
         }
 
         const { data: listasData, error: listasError } = await listasQuery.order("area").order("tri_min").order("ordem");
@@ -9544,10 +9558,10 @@ Para cada disciplina:
         .from("profiles")
         .select("id, name, student_number, turma")
         .eq("role", "student")
-        .eq("school_id", schoolId);
+        .eq("school_id", schoolId as string);
 
       if (turma) {
-        alunosQuery = alunosQuery.eq("turma", turma);
+        alunosQuery = alunosQuery.eq("turma", turma as string);
       }
 
       const { data: alunos, error: alunosError } = await alunosQuery.order("name");
@@ -9562,10 +9576,10 @@ Para cada disciplina:
         let downloadsQuery = supabaseAdmin
           .from("list_downloads")
           .select("student_id, list_id, downloaded_at")
-          .eq("school_id", schoolId);
+          .eq("school_id", schoolId as string);
 
         if (turma) {
-          downloadsQuery = downloadsQuery.eq("turma", turma);
+          downloadsQuery = downloadsQuery.eq("turma", turma as string);
         }
 
         const { data: downloadsData, error: downloadsError } = await downloadsQuery;
@@ -9647,7 +9661,7 @@ Para cada disciplina:
       const { data: profile } = await supabaseAdmin
         .from("profiles")
         .select("school_id")
-        .eq("id", authReq.user.id)
+        .eq("id", authReq.user!.id)
         .single();
 
       if (!profile?.school_id) {

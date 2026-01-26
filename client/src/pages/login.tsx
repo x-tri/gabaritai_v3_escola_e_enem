@@ -38,7 +38,7 @@ export default function LoginPage() {
   // Redirecionar quando profile carregar após login
   useEffect(() => {
     if (loginSuccess && profile) {
-      const redirectPath = getRedirectByRole(profile.role);
+      const redirectPath = getRedirectByRole(profile.role as UserRole);
       setLocation(redirectPath);
     }
   }, [loginSuccess, profile, setLocation]);

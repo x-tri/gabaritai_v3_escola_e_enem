@@ -21,7 +21,7 @@ function getHomeByRole(role: UserRole | undefined): string {
 
 export default function UnauthorizedPage() {
   const { profile, signOut } = useAuth();
-  const homePath = getHomeByRole(profile?.role);
+  const homePath = getHomeByRole(profile?.role as UserRole | undefined);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
