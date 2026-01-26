@@ -5,6 +5,7 @@ import {
   examTemplateSchema,
   questionContentSchema,
   examDisciplineSchema,
+  examConfigurationSchema,
 } from '../schema';
 
 describe('Schema Validation', () => {
@@ -352,6 +353,151 @@ describe('Schema Validation', () => {
         name: 'Redacao',
         startQuestion: 1,
         endQuestion: 1,
+      });
+
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('examConfigurationSchema', () => {
+    const validDisciplines = [
+      { id: 'd1', name: 'LC', startQuestion: 1, endQuestion: 45 },
+      { id: 'd2', name: 'MT', startQuestion: 46, endQuestion: 90 },
+    ];
+
+    const baseConfig = {
+      userId: 'user-1',
+      name: 'ENEM Simulado',
+      totalQuestions: 90,
+      alternativesCount: 5,
+      maxScoreTCT: 10,
+      disciplines: validDisciplines,
+    };
+
+    it('rejects overlapping disciplines', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        disciplines: [
+          { id: 'd1', name: 'LC', startQuestion: 1, endQuestion: 50 },
+          { id: 'd2', name: 'MT', startQuestion: 40, endQuestion: 90 }, // overlap 40-50
+        ],
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects when disciplines dont cover all questions', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        disciplines: [
+          { id: 'd1', name: 'LC', startQuestion: 1, endQuestion: 40 }, // faltam 41-90
+        ],
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid alternativesCount (not 4 or 5)', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        alternativesCount: 3,
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts alternativesCount of 4', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        alternativesCount: 4,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts alternativesCount of 5', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        alternativesCount: 5,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects name with less than 3 characters', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        name: 'AB',
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects totalQuestions less than 5', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        totalQuestions: 4,
+        disciplines: [
+          { id: 'd1', name: 'LC', startQuestion: 1, endQuestion: 4 },
+        ],
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects totalQuestions greater than 500', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        totalQuestions: 501,
+        disciplines: [
+          { id: 'd1', name: 'LC', startQuestion: 1, endQuestion: 501 },
+        ],
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects empty disciplines array', () => {
+      const result = examConfigurationSchema.safeParse({
+        ...baseConfig,
+        disciplines: [],
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts valid ENEM configuration (90 questions, 2 areas)', () => {
+      const result = examConfigurationSchema.safeParse({
+        userId: 'user-1',
+        name: 'ENEM Dia 1',
+        totalQuestions: 90,
+        alternativesCount: 5,
+        maxScoreTCT: 10,
+        usesTRI: true,
+        disciplines: [
+          { id: 'd1', name: 'Linguagens', startQuestion: 1, endQuestion: 45 },
+          { id: 'd2', name: 'Ciencias Humanas', startQuestion: 46, endQuestion: 90 },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts valid ENEM configuration (180 questions, 4 areas)', () => {
+      const result = examConfigurationSchema.safeParse({
+        userId: 'user-1',
+        name: 'ENEM Completo',
+        totalQuestions: 180,
+        alternativesCount: 5,
+        maxScoreTCT: 10,
+        usesTRI: true,
+        usesAdjustedTRI: true,
+        disciplines: [
+          { id: 'd1', name: 'Linguagens', startQuestion: 1, endQuestion: 45 },
+          { id: 'd2', name: 'Ciencias Humanas', startQuestion: 46, endQuestion: 90 },
+          { id: 'd3', name: 'Ciencias Natureza', startQuestion: 91, endQuestion: 135 },
+          { id: 'd4', name: 'Matematica', startQuestion: 136, endQuestion: 180 },
+        ],
       });
 
       expect(result.success).toBe(true);
