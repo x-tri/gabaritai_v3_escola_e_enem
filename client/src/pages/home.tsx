@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Link } from "wouter";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings, Building2 } from "lucide-react";
+import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings, Building2, UserPlus } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, ScatterChart, Scatter, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
@@ -346,6 +346,15 @@ export default function Home() {
   const [excluirProvaDialogOpen, setExcluirProvaDialogOpen] = useState(false);
   const [provaParaExcluirIndex, setProvaParaExcluirIndex] = useState<number | null>(null);
   const [editAnswersDialogOpen, setEditAnswersDialogOpen] = useState(false);
+
+  // Modal para cadastrar aluno avulso manualmente
+  const [cadastrarAlunoDialogOpen, setCadastrarAlunoDialogOpen] = useState(false);
+  const [novoAlunoData, setNovoAlunoData] = useState<{
+    matricula: string;
+    nome: string;
+    turma: string;
+    respostas: string[];
+  }>({ matricula: "", nome: "", turma: "", respostas: [] });
   const [selectedStudentForEdit, setSelectedStudentForEdit] = useState<StudentData | null>(null);
   const [editingAnswers, setEditingAnswers] = useState<string[]>([]);
   const [numQuestions, setNumQuestions] = useState<number>(45);
@@ -7704,6 +7713,27 @@ export default function Home() {
                           <Edit className="h-3 w-3 mr-1" />
                           Editar Gabarito
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-2 bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-700 dark:text-blue-300"
+                          onClick={() => {
+                            const provaAtual = projetoEscolaAtual.provas[provaEscolaSelecionadaIndex ?? 0];
+                            if (provaAtual) {
+                              // Inicializar respostas vazias para o total de questões
+                              setNovoAlunoData({
+                                matricula: "",
+                                nome: "",
+                                turma: "",
+                                respostas: Array(provaAtual.totalQuestoes).fill("")
+                              });
+                              setCadastrarAlunoDialogOpen(true);
+                            }
+                          }}
+                        >
+                          <UserPlus className="h-3 w-3 mr-1" />
+                          Cadastrar Aluno
+                        </Button>
                       </div>
 
                       {/* EDIÇÃO DE GABARITO DA PROVA */}
@@ -13586,6 +13616,307 @@ ${problemReport.problemPages.map(p => `
               ) : (
                 "Publicar Agora"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para cadastrar aluno avulso manualmente */}
+      <Dialog open={cadastrarAlunoDialogOpen} onOpenChange={setCadastrarAlunoDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-blue-600" />
+              Cadastrar Aluno Avulso
+            </DialogTitle>
+            <DialogDescription>
+              Cadastre manualmente um aluno que não foi processado via OMR.
+              {projetoEscolaAtual && projetoEscolaAtual.provas[provaEscolaSelecionadaIndex ?? 0] && (
+                <span className="block mt-1 font-medium text-green-600 dark:text-green-400">
+                  Prova: {projetoEscolaAtual.provas[provaEscolaSelecionadaIndex ?? 0].disciplina} ({projetoEscolaAtual.provas[provaEscolaSelecionadaIndex ?? 0].abreviacao})
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {/* Dados do Aluno */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="novo-aluno-matricula">Matrícula *</Label>
+                <Input
+                  id="novo-aluno-matricula"
+                  placeholder="Ex: 2024001"
+                  value={novoAlunoData.matricula}
+                  onChange={(e) => setNovoAlunoData(prev => ({ ...prev, matricula: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="novo-aluno-nome">Nome Completo *</Label>
+                <Input
+                  id="novo-aluno-nome"
+                  placeholder="Ex: João da Silva"
+                  value={novoAlunoData.nome}
+                  onChange={(e) => setNovoAlunoData(prev => ({ ...prev, nome: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="novo-aluno-turma">Turma</Label>
+                <Input
+                  id="novo-aluno-turma"
+                  placeholder="Ex: 3A"
+                  value={novoAlunoData.turma}
+                  onChange={(e) => setNovoAlunoData(prev => ({ ...prev, turma: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Respostas */}
+            <div className="grid gap-2">
+              <Label className="flex items-center justify-between">
+                <span>Respostas ({novoAlunoData.respostas.length} questões)</span>
+                <span className="text-xs text-muted-foreground">
+                  Preenchidas: {novoAlunoData.respostas.filter(r => r.trim()).length}/{novoAlunoData.respostas.length}
+                </span>
+              </Label>
+              <div className="flex flex-wrap gap-1 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border max-h-[300px] overflow-y-auto">
+                {novoAlunoData.respostas.map((resposta, idx) => {
+                  const provaAtual = projetoEscolaAtual?.provas[provaEscolaSelecionadaIndex ?? 0];
+                  const gabaritoResposta = provaAtual?.gabarito?.[idx]?.toUpperCase().trim() || "";
+                  const respostaAluno = resposta.toUpperCase().trim();
+                  const isCorrect = gabaritoResposta && respostaAluno && gabaritoResposta === respostaAluno;
+                  const isWrong = gabaritoResposta && respostaAluno && gabaritoResposta !== respostaAluno;
+
+                  return (
+                    <div key={idx} className="flex flex-col items-center">
+                      <span className="text-xs text-muted-foreground mb-1">Q{idx + 1}</span>
+                      <Input
+                        value={resposta}
+                        onChange={(e) => {
+                          const novasRespostas = [...novoAlunoData.respostas];
+                          novasRespostas[idx] = e.target.value.toUpperCase().slice(0, 1);
+                          setNovoAlunoData(prev => ({ ...prev, respostas: novasRespostas }));
+                        }}
+                        className={`w-9 h-9 text-center text-sm font-bold p-0 ${
+                          isCorrect ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" :
+                          isWrong ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" :
+                          "border-slate-300"
+                        }`}
+                        maxLength={1}
+                      />
+                      {gabaritoResposta && (
+                        <span className={`text-xs mt-0.5 ${isCorrect ? "text-green-600" : "text-slate-400"}`}>
+                          {gabaritoResposta}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Preview de resultado */}
+            {projetoEscolaAtual && projetoEscolaAtual.provas[provaEscolaSelecionadaIndex ?? 0] && (() => {
+              const provaAtual = projetoEscolaAtual.provas[provaEscolaSelecionadaIndex ?? 0];
+              const gabarito = provaAtual.gabarito || [];
+              const respostas = novoAlunoData.respostas;
+              const acertos = respostas.reduce((acc, resp, idx) => {
+                const gabResp = gabarito[idx]?.toUpperCase().trim() || "";
+                const alunoResp = resp.toUpperCase().trim();
+                return acc + (gabResp && alunoResp && gabResp === alunoResp ? 1 : 0);
+              }, 0);
+              const totalQuestoes = provaAtual.totalQuestoes;
+              const notaTCT = totalQuestoes > 0 ? (acertos / totalQuestoes) * provaAtual.notaMaxima : 0;
+
+              return (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                    <Calculator className="h-4 w-4 text-blue-600" />
+                    Preview do Resultado
+                  </h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Acertos:</span>{" "}
+                      <span className="font-bold text-green-600">{acertos}/{totalQuestoes}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Nota TCT:</span>{" "}
+                      <span className="font-bold">{notaTCT.toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Percentual:</span>{" "}
+                      <span className="font-bold">{totalQuestoes > 0 ? ((acertos / totalQuestoes) * 100).toFixed(1) : 0}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCadastrarAlunoDialogOpen(false);
+                setNovoAlunoData({ matricula: "", nome: "", turma: "", respostas: [] });
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                // Validações
+                if (!novoAlunoData.matricula.trim()) {
+                  toast({
+                    title: "Matrícula obrigatória",
+                    description: "Informe a matrícula do aluno.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                if (!novoAlunoData.nome.trim()) {
+                  toast({
+                    title: "Nome obrigatório",
+                    description: "Informe o nome completo do aluno.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                if (!projetoEscolaAtual) {
+                  toast({
+                    title: "Erro",
+                    description: "Nenhum projeto carregado.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                const provaIdx = provaEscolaSelecionadaIndex ?? 0;
+                const provaAtual = projetoEscolaAtual.provas[provaIdx];
+                if (!provaAtual) {
+                  toast({
+                    title: "Erro",
+                    description: "Nenhuma prova selecionada.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                // Verificar se matrícula já existe
+                const matriculaExistente = provaAtual.resultados.some(
+                  r => r.alunoId === novoAlunoData.matricula.trim()
+                );
+                if (matriculaExistente) {
+                  toast({
+                    title: "Matrícula duplicada",
+                    description: "Já existe um aluno com esta matrícula nesta prova.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                try {
+                  // Calcular acertos e nota
+                  const gabarito = provaAtual.gabarito || [];
+                  const respostas = novoAlunoData.respostas;
+                  const acertos = respostas.reduce((acc, resp, idx) => {
+                    const gabResp = gabarito[idx]?.toUpperCase().trim() || "";
+                    const alunoResp = resp.toUpperCase().trim();
+                    return acc + (gabResp && alunoResp && gabResp === alunoResp ? 1 : 0);
+                  }, 0);
+                  const totalQuestoes = provaAtual.totalQuestoes;
+                  const notaTCT = totalQuestoes > 0 ? (acertos / totalQuestoes) * provaAtual.notaMaxima : 0;
+
+                  // Calcular TRI se a prova usa TRI
+                  let notaTRI: number | undefined;
+                  if (provaAtual.usesTRI) {
+                    // Usar a função calcularTRIEscolaComCoerencia
+                    const todosResultados = provaAtual.resultados;
+                    const dificuldadeQuestoes: number[] = [];
+                    for (let q = 0; q < totalQuestoes; q++) {
+                      let erros = 0;
+                      let total = 0;
+                      todosResultados.forEach(res => {
+                        const respAluno = ((res.respostas || [])[q] || "").toUpperCase().trim();
+                        const respGab = (gabarito[q] || "").toUpperCase().trim();
+                        if (respAluno) {
+                          total++;
+                          if (respAluno !== respGab) erros++;
+                        }
+                      });
+                      dificuldadeQuestoes.push(total > 0 ? erros / total : 0.5);
+                    }
+                    notaTRI = calcularTRIEscolaComCoerencia(acertos, totalQuestoes, respostas, gabarito, dificuldadeQuestoes);
+                  }
+
+                  // Criar o novo resultado
+                  const novoResultado: ResultadoAlunoProva = {
+                    alunoId: novoAlunoData.matricula.trim(),
+                    nome: novoAlunoData.nome.trim(),
+                    turma: novoAlunoData.turma.trim() || undefined,
+                    acertos,
+                    totalQuestoes,
+                    notaTCT: Math.round(notaTCT * 100) / 100, // Arredondar para 2 casas
+                    notaTRI: notaTRI !== undefined ? Math.round(notaTRI * 10) / 10 : undefined,
+                    respostas,
+                  };
+
+                  // Clonar e atualizar o projeto
+                  const novosProjetos = JSON.parse(JSON.stringify(projetosEscolaSalvos)) as typeof projetosEscolaSalvos;
+                  const projetoIdx = novosProjetos.findIndex(p => p.id === projetoEscolaAtual.id);
+
+                  if (projetoIdx >= 0) {
+                    // Adicionar resultado à prova
+                    novosProjetos[projetoIdx].provas[provaIdx].resultados.push(novoResultado);
+
+                    // Adicionar aos alunos únicos se não existir
+                    const alunoExiste = novosProjetos[projetoIdx].alunosUnicos.some(
+                      a => a.id === novoAlunoData.matricula.trim()
+                    );
+                    if (!alunoExiste) {
+                      novosProjetos[projetoIdx].alunosUnicos.push({
+                        id: novoAlunoData.matricula.trim(),
+                        nome: novoAlunoData.nome.trim(),
+                        turma: novoAlunoData.turma.trim() || undefined,
+                      });
+                    }
+
+                    // Atualizar updatedAt
+                    novosProjetos[projetoIdx].updatedAt = new Date().toISOString();
+
+                    // Salvar no Supabase
+                    const projetoAtualizado = await salvarProjetoEscola(novosProjetos[projetoIdx]);
+
+                    // Atualizar estados locais
+                    if (projetoAtualizado) {
+                      setProjetosEscolaSalvos(prev =>
+                        prev.map(p => p.id === projetoAtualizado.id ? projetoAtualizado : p)
+                      );
+                      setProjetoEscolaAtual(projetoAtualizado);
+                    }
+
+                    toast({
+                      title: "✅ Aluno cadastrado!",
+                      description: `${novoAlunoData.nome} foi adicionado à prova ${provaAtual.disciplina} com nota ${notaTCT.toFixed(2)}.`,
+                    });
+
+                    // Fechar modal e limpar dados
+                    setCadastrarAlunoDialogOpen(false);
+                    setNovoAlunoData({ matricula: "", nome: "", turma: "", respostas: [] });
+                  }
+                } catch (error) {
+                  console.error("Erro ao cadastrar aluno:", error);
+                  toast({
+                    title: "Erro ao cadastrar",
+                    description: error instanceof Error ? error.message : "Tente novamente.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={!novoAlunoData.matricula.trim() || !novoAlunoData.nome.trim()}
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Cadastrar Aluno
             </Button>
           </DialogFooter>
         </DialogContent>
