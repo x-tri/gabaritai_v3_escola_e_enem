@@ -355,6 +355,28 @@ export default function Home() {
     turma: string;
     respostas: string[];
   }>({ matricula: "", nome: "", turma: "", respostas: [] });
+
+  // Modal para cadastrar aluno avulso no modo ENEM (180 questões em 4 áreas)
+  const [cadastrarAlunoENEMDialogOpen, setCadastrarAlunoENEMDialogOpen] = useState(false);
+  const [novoAlunoENEMData, setNovoAlunoENEMData] = useState<{
+    matricula: string;
+    nome: string;
+    turma: string;
+    respostasLC: string[];  // 45 questões LC
+    respostasCH: string[];  // 45 questões CH
+    respostasCN: string[];  // 45 questões CN
+    respostasMT: string[];  // 45 questões MT
+  }>({
+    matricula: "",
+    nome: "",
+    turma: "",
+    respostasLC: Array(45).fill(""),
+    respostasCH: Array(45).fill(""),
+    respostasCN: Array(45).fill(""),
+    respostasMT: Array(45).fill("")
+  });
+  const [abaAreaENEM, setAbaAreaENEM] = useState<"LC" | "CH" | "CN" | "MT">("LC");
+
   const [selectedStudentForEdit, setSelectedStudentForEdit] = useState<StudentData | null>(null);
   const [editingAnswers, setEditingAnswers] = useState<string[]>([]);
   const [numQuestions, setNumQuestions] = useState<number>(45);
@@ -6710,13 +6732,34 @@ export default function Home() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
-                <Button 
-                  onClick={handleExportExcel} 
+                <Button
+                  onClick={handleExportExcel}
                   className="w-full h-auto py-3 px-4 font-semibold border-2 border-blue-500/30 bg-white/10 hover:bg-white/20 text-white hover:text-white hover:border-blue-400/50 transition-all hover:shadow-md rounded-xl justify-start backdrop-blur-sm"
                   data-testid="button-export-excel"
                 >
                   <Download className="h-5 w-5 mr-3 flex-shrink-0 text-white" />
                   <span className="text-white">Exportar para Excel</span>
+                </Button>
+                <Button
+                  onClick={() => {
+                    // Inicializar respostas vazias para 180 questões (4 áreas x 45)
+                    setNovoAlunoENEMData({
+                      matricula: "",
+                      nome: "",
+                      turma: "",
+                      respostasLC: Array(45).fill(""),
+                      respostasCH: Array(45).fill(""),
+                      respostasCN: Array(45).fill(""),
+                      respostasMT: Array(45).fill("")
+                    });
+                    setAbaAreaENEM("LC");
+                    setCadastrarAlunoENEMDialogOpen(true);
+                  }}
+                  className="w-full h-auto py-3 px-4 font-semibold border-2 border-green-500/30 bg-green-600/20 hover:bg-green-600/40 text-white hover:text-white hover:border-green-400/50 transition-all hover:shadow-md rounded-xl justify-start backdrop-blur-sm"
+                  data-testid="button-cadastrar-aluno-enem"
+                >
+                  <UserPlus className="h-5 w-5 mr-3 flex-shrink-0 text-white" />
+                  <span className="text-white">Cadastrar Aluno</span>
                 </Button>
               </>
             )}
@@ -13914,6 +13957,267 @@ ${problemReport.problemPages.map(p => `
               }}
               className="bg-blue-600 hover:bg-blue-700"
               disabled={!novoAlunoData.matricula.trim() || !novoAlunoData.nome.trim()}
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Cadastrar Aluno
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para cadastrar aluno avulso no modo ENEM (180 questões) */}
+      <Dialog open={cadastrarAlunoENEMDialogOpen} onOpenChange={setCadastrarAlunoENEMDialogOpen}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-blue-600" />
+              Cadastrar Aluno Avulso - ENEM
+            </DialogTitle>
+            <DialogDescription>
+              Cadastre manualmente um aluno com suas 180 respostas (45 por área).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Campos básicos */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="matricula-enem">Matrícula *</Label>
+                <Input
+                  id="matricula-enem"
+                  placeholder="Ex: 224220001"
+                  value={novoAlunoENEMData.matricula}
+                  onChange={(e) => setNovoAlunoENEMData(prev => ({ ...prev, matricula: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nome-enem">Nome *</Label>
+                <Input
+                  id="nome-enem"
+                  placeholder="Nome completo"
+                  value={novoAlunoENEMData.nome}
+                  onChange={(e) => setNovoAlunoENEMData(prev => ({ ...prev, nome: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="turma-enem">Turma</Label>
+                <Input
+                  id="turma-enem"
+                  placeholder="Ex: 3A"
+                  value={novoAlunoENEMData.turma}
+                  onChange={(e) => setNovoAlunoENEMData(prev => ({ ...prev, turma: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Preview de preenchimento */}
+            <div className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              <div className="flex gap-4 text-sm">
+                <span className={`font-medium ${novoAlunoENEMData.respostasLC.filter(r => r).length > 0 ? "text-green-600" : "text-slate-400"}`}>
+                  LC: {novoAlunoENEMData.respostasLC.filter(r => r).length}/45
+                </span>
+                <span className={`font-medium ${novoAlunoENEMData.respostasCH.filter(r => r).length > 0 ? "text-green-600" : "text-slate-400"}`}>
+                  CH: {novoAlunoENEMData.respostasCH.filter(r => r).length}/45
+                </span>
+                <span className={`font-medium ${novoAlunoENEMData.respostasCN.filter(r => r).length > 0 ? "text-green-600" : "text-slate-400"}`}>
+                  CN: {novoAlunoENEMData.respostasCN.filter(r => r).length}/45
+                </span>
+                <span className={`font-medium ${novoAlunoENEMData.respostasMT.filter(r => r).length > 0 ? "text-green-600" : "text-slate-400"}`}>
+                  MT: {novoAlunoENEMData.respostasMT.filter(r => r).length}/45
+                </span>
+              </div>
+              <span className="text-sm font-bold">
+                Total: {
+                  novoAlunoENEMData.respostasLC.filter(r => r).length +
+                  novoAlunoENEMData.respostasCH.filter(r => r).length +
+                  novoAlunoENEMData.respostasCN.filter(r => r).length +
+                  novoAlunoENEMData.respostasMT.filter(r => r).length
+                }/180
+              </span>
+            </div>
+
+            {/* Tabs para cada área */}
+            <Tabs value={abaAreaENEM} onValueChange={(v) => setAbaAreaENEM(v as "LC" | "CH" | "CN" | "MT")}>
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="LC" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  LC (Dia 1)
+                </TabsTrigger>
+                <TabsTrigger value="CH" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-white">
+                  CH (Dia 1)
+                </TabsTrigger>
+                <TabsTrigger value="CN" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
+                  CN (Dia 2)
+                </TabsTrigger>
+                <TabsTrigger value="MT" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+                  MT (Dia 2)
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Conteúdo de cada área */}
+              {(["LC", "CH", "CN", "MT"] as const).map((area) => {
+                const respostasKey = `respostas${area}` as keyof typeof novoAlunoENEMData;
+                const respostasArea = novoAlunoENEMData[respostasKey] as string[];
+                // answerKey: LC[0-44], CH[45-89], CN[90-134], MT[135-179]
+                const areaStartIndex = area === "LC" ? 0 : area === "CH" ? 45 : area === "CN" ? 90 : 135;
+                const gabaritoArea = answerKey.slice(areaStartIndex, areaStartIndex + 45);
+
+                return (
+                  <TabsContent key={area} value={area} className="mt-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">
+                          Questões 1-45 de {area === "LC" ? "Linguagens e Códigos" :
+                            area === "CH" ? "Ciências Humanas" :
+                            area === "CN" ? "Ciências da Natureza" : "Matemática"}
+                        </span>
+                        {gabaritoArea.length > 0 && (
+                          <span className="text-xs text-green-600 font-medium">
+                            Gabarito: {gabaritoArea.filter((g: string) => g).length}/45 questões
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Grid de questões 9x5 */}
+                      <div className="grid grid-cols-9 gap-2">
+                        {Array.from({ length: 45 }, (_, i) => {
+                          const questao = i + 1;
+                          const resposta = respostasArea[i] || "";
+                          const gabaritoQ = gabaritoArea[i] || "";
+                          const isCorrect = resposta && gabaritoQ && resposta === gabaritoQ;
+                          const isWrong = resposta && gabaritoQ && resposta !== gabaritoQ;
+
+                          return (
+                            <div key={i} className="flex flex-col items-center">
+                              <span className="text-xs text-slate-500 mb-1">{questao}</span>
+                              <Select
+                                value={resposta}
+                                onValueChange={(value) => {
+                                  const novasRespostas = [...respostasArea];
+                                  novasRespostas[i] = value;
+                                  setNovoAlunoENEMData(prev => ({
+                                    ...prev,
+                                    [respostasKey]: novasRespostas
+                                  }));
+                                }}
+                              >
+                                <SelectTrigger
+                                  className={`w-10 h-8 text-xs font-bold ${
+                                    isCorrect ? "bg-green-100 border-green-500 text-green-700" :
+                                    isWrong ? "bg-red-100 border-red-500 text-red-700" :
+                                    resposta ? "bg-blue-50 border-blue-300" : ""
+                                  }`}
+                                >
+                                  <SelectValue placeholder="-" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">-</SelectItem>
+                                  <SelectItem value="A">A</SelectItem>
+                                  <SelectItem value="B">B</SelectItem>
+                                  <SelectItem value="C">C</SelectItem>
+                                  <SelectItem value="D">D</SelectItem>
+                                  <SelectItem value="E">E</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Acertos da área */}
+                      {gabaritoArea.length > 0 && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Acertos em {area}:</span>
+                            <span className="font-bold text-lg">
+                              {respostasArea.filter((r, i) => r && gabaritoArea[i] && r === gabaritoArea[i]).length} / {gabaritoArea.filter((g: string) => g).length}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                );
+              })}
+            </Tabs>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCadastrarAlunoENEMDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  if (!novoAlunoENEMData.matricula.trim() || !novoAlunoENEMData.nome.trim()) {
+                    toast({
+                      title: "Campos obrigatórios",
+                      description: "Preencha matrícula e nome.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  // Combinar todas as respostas em ordem: LC + CH + CN + MT
+                  const todasRespostas = [
+                    ...novoAlunoENEMData.respostasLC,
+                    ...novoAlunoENEMData.respostasCH,
+                    ...novoAlunoENEMData.respostasCN,
+                    ...novoAlunoENEMData.respostasMT
+                  ];
+
+                  // Criar novo aluno no formato StudentData
+                  const novoAluno: StudentData = {
+                    id: `manual-${novoAlunoENEMData.matricula.trim()}-${Date.now()}`,
+                    studentNumber: novoAlunoENEMData.matricula.trim(),
+                    studentName: novoAlunoENEMData.nome.trim(),
+                    turma: novoAlunoENEMData.turma.trim() || undefined,
+                    answers: todasRespostas,
+                    pageNumber: 0,
+                    confidence: 100,
+                  };
+
+                  // Adicionar ao array de students
+                  setStudents(prev => [...prev, novoAluno]);
+
+                  // Extrair gabaritos por área do answerKey global: LC[0-44], CH[45-89], CN[90-134], MT[135-179]
+                  const gabLC = answerKey.slice(0, 45);
+                  const gabCH = answerKey.slice(45, 90);
+                  const gabCN = answerKey.slice(90, 135);
+                  const gabMT = answerKey.slice(135, 180);
+
+                  // Calcular acertos para preview
+                  const acertosLC = novoAlunoENEMData.respostasLC.filter((r, i) => r && gabLC[i] && r === gabLC[i]).length;
+                  const acertosCH = novoAlunoENEMData.respostasCH.filter((r, i) => r && gabCH[i] && r === gabCH[i]).length;
+                  const acertosCN = novoAlunoENEMData.respostasCN.filter((r, i) => r && gabCN[i] && r === gabCN[i]).length;
+                  const acertosMT = novoAlunoENEMData.respostasMT.filter((r, i) => r && gabMT[i] && r === gabMT[i]).length;
+
+                  toast({
+                    title: "✅ Aluno cadastrado!",
+                    description: `${novoAlunoENEMData.nome} adicionado. LC: ${acertosLC}/45, CH: ${acertosCH}/45, CN: ${acertosCN}/45, MT: ${acertosMT}/45`,
+                  });
+
+                  // Fechar modal e limpar
+                  setCadastrarAlunoENEMDialogOpen(false);
+                  setNovoAlunoENEMData({
+                    matricula: "",
+                    nome: "",
+                    turma: "",
+                    respostasLC: Array(45).fill(""),
+                    respostasCH: Array(45).fill(""),
+                    respostasCN: Array(45).fill(""),
+                    respostasMT: Array(45).fill("")
+                  });
+                } catch (error) {
+                  console.error("Erro ao cadastrar aluno ENEM:", error);
+                  toast({
+                    title: "Erro ao cadastrar",
+                    description: error instanceof Error ? error.message : "Tente novamente.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={!novoAlunoENEMData.matricula.trim() || !novoAlunoENEMData.nome.trim()}
             >
               <UserPlus className="h-4 w-4 mr-2" />
               Cadastrar Aluno
