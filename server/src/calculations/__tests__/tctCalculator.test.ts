@@ -132,4 +132,106 @@ describe('TCTCalculator', () => {
       expect(results[0].areaScores).toEqual({});
     });
   });
+
+  describe('Edge Cases', () => {
+    it('handles student with fewer answers than answer key', () => {
+      const students = [createStudent('001', ['A', 'B'])]; // 2 answers
+      const answerKey = ['A', 'B', 'C', 'D', 'E']; // 5 questions
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      // 2 correct out of 5 total questions = 40%
+      expect(results[0].averageScore).toBe(4);
+    });
+
+    it('handles student with more answers than answer key', () => {
+      const students = [createStudent('001', ['A', 'B', 'C', 'D', 'E', 'A', 'B'])]; // 7 answers
+      const answerKey = ['A', 'B', 'C']; // 3 questions
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      // 3 correct out of 3 questions = 100%
+      expect(results[0].averageScore).toBe(10);
+    });
+
+    it('handles blank answers (empty string) as incorrect', () => {
+      const students = [createStudent('001', ['A', '', 'C', '', 'E'])];
+      const answerKey = ['A', 'B', 'C', 'D', 'E'];
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      // 3 correct (A, C, E) out of 5 = 60%
+      expect(results[0].averageScore).toBe(6);
+    });
+
+    it('handles undefined answers as incorrect', () => {
+      const answers: (string | undefined)[] = ['A', undefined, 'C'];
+      const students = [{
+        id: '001',
+        studentNumber: '001',
+        studentName: 'Student 001',
+        answers: answers as string[],
+        pageNumber: 1,
+      }];
+      const answerKey = ['A', 'B', 'C'];
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      // 2 correct (A, C) out of 3 = 66.67%
+      expect(results[0].averageScore).toBeCloseTo(6.67, 2);
+    });
+
+    it('rounds score to 2 decimal places', () => {
+      const students = [createStudent('001', ['A', 'B', 'X'])];
+      const answerKey = ['A', 'B', 'C'];
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      // 2/3 = 0.6666... * 10 = 6.666...
+      expect(results[0].averageScore).toBe(6.67);
+    });
+
+    it('handles completely empty answers array', () => {
+      const students = [createStudent('001', [])];
+      const answerKey = ['A', 'B', 'C'];
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      expect(results[0].averageScore).toBe(0);
+    });
+
+    it('handles single question exam', () => {
+      const students = [createStudent('001', ['A'])];
+      const answerKey = ['A'];
+
+      const results = TCTCalculator.calculate(students, answerKey);
+
+      expect(results[0].averageScore).toBe(10);
+    });
+
+    it('handles area calculation with mismatched answer lengths', () => {
+      const students = [createStudent('001', ['A', 'B'])]; // only 2 answers
+      const answerKey = ['A', 'B', 'C', 'D', 'E'];
+      const areas = [
+        { area: 'Area1', start: 1, end: 3 },
+        { area: 'Area2', start: 4, end: 5 },
+      ];
+
+      const results = TCTCalculator.calculate(students, answerKey, areas);
+
+      // Area1: 2/3 correct = 6.67
+      // Area2: 0/2 correct = 0
+      expect(results[0].areaScores.Area1).toBeCloseTo(6.67, 2);
+      expect(results[0].areaScores.Area2).toBe(0);
+    });
+
+    it('uses custom maxScore correctly', () => {
+      const students = [createStudent('001', ['A', 'B', 'C', 'D', 'E'])];
+      const answerKey = ['A', 'B', 'C', 'D', 'E'];
+
+      const results = TCTCalculator.calculate(students, answerKey, undefined, { maxScore: 100 });
+
+      expect(results[0].averageScore).toBe(100);
+    });
+  });
 });
