@@ -39,8 +39,9 @@ NUM_COLUMNS = 6
 OPTIONS = ['A', 'B', 'C', 'D', 'E']
 
 # Thresholds de detecção (calibrados para o template X-TRI)
-FILL_THRESHOLD = 40      # % mínimo de pixels escuros para considerar marcado
-DARK_PIXEL_VALUE = 150   # Valor de pixel considerado "escuro" (0-255)
+# AJUSTADO: reduzido de 40% para 28% para detectar marcações leves/cinzas
+FILL_THRESHOLD = 28      # % mínimo de pixels escuros para considerar marcado
+DARK_PIXEL_VALUE = 170   # Valor de pixel considerado "escuro" (0-255) - aumentado para incluir cinzas
 
 
 # ============================================================
@@ -276,51 +277,83 @@ def detect_answer(gray: np.ndarray, options: List[Dict]) -> Tuple[Optional[str],
         'diff': diff
     }
 
-    # Decisão
+    # Decisão - lógica melhorada para marcações leves
+    # 1. Em branco: nenhuma bolha significativamente escura
     if best['darkness'] < FILL_THRESHOLD:
         return None, stats  # Em branco
 
-    if second['darkness'] >= FILL_THRESHOLD - 5 and diff < 8:
+    # 2. Dupla marcação: duas bolhas muito próximas em escuridão (ambas acima do threshold)
+    if second['darkness'] >= FILL_THRESHOLD and diff < 6:
         stats['warning'] = 'double_mark'
         return None, stats  # Dupla marcação
 
-    return best['option'], stats
+    # 3. Marcação clara: melhor bolha é significativamente mais escura
+    # Usa diferença relativa para lidar com marcações leves
+    relative_diff = (diff / best['darkness'] * 100) if best['darkness'] > 0 else 0
+    if diff >= 5 or relative_diff >= 15:  # diff absoluta >= 5% OU relativa >= 15%
+        return best['option'], stats
+
+    # 4. Fallback: se melhor está bem acima do threshold, aceitar
+    if best['darkness'] >= FILL_THRESHOLD + 10:
+        return best['option'], stats
+
+    # Incerto = em branco (evita falsos positivos)
+    return None, stats
 
 
 # ============================================================
 # LEITURA DE QR CODE
 # ============================================================
 
-def read_qr_code(image: np.ndarray) -> Optional[str]:
+def read_qr_code(image: np.ndarray) -> Tuple[Optional[str], int]:
     """
-    Lê o QR Code do gabarito.
+    Lê o QR Code do gabarito e extrai sheet_code e dia.
 
     Args:
         image: Imagem BGR ou grayscale
 
     Returns:
-        Código do gabarito (ex: XTRI-U6M9R7) ou None
+        Tuple (sheet_code, start_question):
+        - sheet_code: Código do gabarito (ex: XTRI-U6M9R7) ou None
+        - start_question: 1 para DIA 1, 91 para DIA 2
     """
     try:
         from pyzbar import pyzbar
     except ImportError:
-        return None
+        return None, 1
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
     h, w = gray.shape
+
+    qr_data = None
 
     # Tentar ROI do canto superior direito primeiro
     roi = gray[0:int(h*0.3), int(w*0.6):w]
     for obj in pyzbar.decode(roi):
         if obj.type == 'QRCODE':
-            return obj.data.decode('utf-8').strip()
+            qr_data = obj.data.decode('utf-8').strip()
+            break
 
     # Fallback: imagem completa
-    for obj in pyzbar.decode(gray):
-        if obj.type == 'QRCODE':
-            return obj.data.decode('utf-8').strip()
+    if qr_data is None:
+        for obj in pyzbar.decode(gray):
+            if obj.type == 'QRCODE':
+                qr_data = obj.data.decode('utf-8').strip()
+                break
 
-    return None
+    if qr_data is None:
+        return None, 1
+
+    # Parsear formato: XTRI-BJC3VP-D1 ou XTRI-BJC3VP-D2
+    if qr_data.endswith('-D2'):
+        sheet_code = qr_data[:-3]  # Remove -D2
+        return sheet_code, 91
+    elif qr_data.endswith('-D1'):
+        sheet_code = qr_data[:-3]  # Remove -D1
+        return sheet_code, 1
+    else:
+        # Formato antigo (sem sufixo) = DIA 1
+        return qr_data, 1
 
 
 # ============================================================
@@ -344,9 +377,13 @@ def process_answer_sheet(image: np.ndarray) -> Dict[str, Any]:
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
 
+    # Ler QR Code para obter sheet_code e start_question
+    sheet_code, start_question = read_qr_code(image)
+
     result = {
         'success': False,
-        'sheet_code': read_qr_code(image),
+        'sheet_code': sheet_code,
+        'start_question': start_question,  # 1 para DIA 1, 91 para DIA 2
         'answers': {},
         'stats': {
             'answered': 0,
@@ -369,8 +406,11 @@ def process_answer_sheet(image: np.ndarray) -> Dict[str, Any]:
         return result
 
     # 3. Analisar cada questão
+    # Aplicar offset baseado no start_question (1 para DIA 1, 91 para DIA 2)
+    question_offset = start_question - 1
+
     for q_data in bubble_positions:
-        q_num = q_data['question']
+        q_num = q_data['question'] + question_offset  # Ajusta numeração
         answer, stats = detect_answer(gray, q_data['options'])
 
         result['answers'][str(q_num)] = answer

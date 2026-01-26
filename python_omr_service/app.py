@@ -347,13 +347,14 @@ OPTION_SPACING = 25
 # Raio da bolha (5 pontos = 10.4 pixels)
 BUBBLE_RADIUS = 10
 
-# Thresholds RECALIBRADOS para MAXIMA PRECISAO (90/90)
+# Thresholds RECALIBRADOS para detectar marcações leves/cinzas
 # METODO RELATIVO: compara bolhas entre si na mesma questao
-MARKED_THRESHOLD = 38.0      # % escuro absoluto para considerar marcado
-BLANK_THRESHOLD = 32.0       # Se a mais escura < 32%, questão em branco
-RELATIVE_DIFF = 4.0          # Diferença minima entre 1a e 2a para ser marcação clara
-DOUBLE_MARK_DIFF = 4.0       # Se diff < 4% entre 1a e 2a (ambas altas), dupla marcação
-DARK_PIXEL_THRESHOLD = 150   # Valor de pixel para considerar escuro (mais conservador)
+# AJUSTADO: valores mais baixos para capturar marcações fracas
+MARKED_THRESHOLD = 28.0      # % escuro absoluto para considerar marcado (era 38%)
+BLANK_THRESHOLD = 22.0       # Se a mais escura < 22%, questão em branco (era 32%)
+RELATIVE_DIFF = 5.0          # Diferença minima entre 1a e 2a para ser marcação clara
+DOUBLE_MARK_DIFF = 5.0       # Se diff < 5% entre 1a e 2a (ambas altas), dupla marcação
+DARK_PIXEL_THRESHOLD = 170   # Valor de pixel para considerar escuro (aumentado para cinzas)
 
 
 # ============================================================
@@ -661,28 +662,32 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y, aligned=False):
     diff = best['darkness'] - second['darkness']
 
     # ============================================================
-    # LÓGICA SIMPLIFICADA - 4 PASSOS HIERÁRQUICOS
+    # LÓGICA MELHORADA - Suporta marcações leves/cinzas
     # ============================================================
+
+    # Calcular diferença relativa (importante para marcas leves)
+    relative_diff = (diff / best['darkness'] * 100) if best['darkness'] > 0 else 0
 
     # 1. BLANK: nenhuma bolha significativamente escura
     if best['darkness'] < BLANK_THRESHOLD:
         return None
 
-    # 2. DOUBLE MARK: duas bolhas escuras com diferença pequena
-    if best['darkness'] >= MARKED_THRESHOLD and second['darkness'] >= (MARKED_THRESHOLD - 5):
+    # 2. DOUBLE MARK: duas bolhas escuras com diferença pequena (ambas acima do threshold)
+    if best['darkness'] >= MARKED_THRESHOLD and second['darkness'] >= MARKED_THRESHOLD:
         if diff < DOUBLE_MARK_DIFF:
             return 'X'
 
-    # 3. CLEAR MARK: melhor bolha é escura E significativamente mais escura que segunda
-    if best['darkness'] >= MARKED_THRESHOLD and diff >= RELATIVE_DIFF:
-        return best['label']
-
-    # 4. LIGHT MARK: diferença relativa grande (para marcas leves mas distinguíveis)
-    if diff >= RELATIVE_DIFF * 1.5:
-        return best['label']
-
-    # 5. FALLBACK: se melhor está acima do threshold, aceitar mesmo com diff menor
+    # 3. CLEAR MARK: melhor bolha tem diferença absoluta ou relativa significativa
     if best['darkness'] >= MARKED_THRESHOLD:
+        if diff >= RELATIVE_DIFF or relative_diff >= 15:  # diff >= 5% OU relativa >= 15%
+            return best['label']
+
+    # 4. LIGHT MARK: marcação leve mas distinguível (diferença relativa grande)
+    if best['darkness'] >= BLANK_THRESHOLD and relative_diff >= 20:
+        return best['label']
+
+    # 5. FALLBACK: se melhor está bem acima do threshold, aceitar
+    if best['darkness'] >= MARKED_THRESHOLD + 8:
         return best['label']
 
     # Incerto = em branco
@@ -693,6 +698,9 @@ def process_omr(img):
     """
     Processa uma imagem e retorna as respostas.
     Usa o novo leitor Hough (100% precisão) com fallback para o legado.
+
+    Suporta DIA 1 (questões 1-90) e DIA 2 (questões 91-180).
+    O dia é detectado automaticamente pelo QR Code.
     """
     start_time = time.time()
 
@@ -703,16 +711,23 @@ def process_omr(img):
             elapsed = time.time() - start_time
 
             if result['success']:
-                # Converter formato: {'1': 'A', '2': 'B', ...} -> ['A', 'B', ...]
+                # Obter start_question do resultado (1 para DIA 1, 91 para DIA 2)
+                start_question = result.get('start_question', 1)
+                end_question = start_question + 89  # 90 questões por dia
+
+                # Converter formato: {'1': 'A', ...} ou {'91': 'A', ...} -> lista ordenada
                 answers_list = []
-                for i in range(1, 91):
+                for i in range(start_question, end_question + 1):
                     ans = result['answers'].get(str(i))
                     answers_list.append(ans)
 
-                logger.info(f"Hough OMR: {result['stats']['answered']}/90 respondidas ({elapsed*1000:.1f}ms)")
+                day = 1 if start_question == 1 else 2
+                logger.info(f"Hough OMR (DIA {day}): {result['stats']['answered']}/90 respondidas ({elapsed*1000:.1f}ms)")
 
                 return {
                     'answers': answers_list,
+                    'answers_dict': result['answers'],  # Dict original com números corretos
+                    'start_question': start_question,
                     'answered': result['stats']['answered'],
                     'blank': result['stats']['blank'],
                     'double_marked': result['stats']['double_marked'],
@@ -725,6 +740,7 @@ def process_omr(img):
             logger.warning(f"Hough OMR erro: {e}, usando método legado")
 
     # Fallback: método legado (baseado em coordenadas)
+    # Nota: método legado sempre retorna questões 1-90 (não suporta DIA 2)
     return process_omr_legacy(img, start_time)
 
 
@@ -806,7 +822,12 @@ SHEET_CODE_PATTERN = re.compile(r'^XTRI-[A-Z2-9]{6}$')
 def read_qr_code(img):
     """
     Lê QR Code da imagem ANTES de qualquer transformação.
-    Retorna o conteúdo do QR ou None se não encontrar.
+    Retorna tuple (sheet_code, start_question) ou (None, 1) se não encontrar.
+
+    O QR pode ter formato:
+    - XTRI-XXXXXX (antigo, assume DIA 1)
+    - XTRI-XXXXXX-D1 (DIA 1, questões 1-90)
+    - XTRI-XXXXXX-D2 (DIA 2, questões 91-180)
     """
     # Tentar na imagem original primeiro
     if len(img.shape) == 3:
@@ -814,42 +835,61 @@ def read_qr_code(img):
     else:
         gray = img.copy()
 
+    qr_data = None
+
     # Decodificar QR codes
     decoded_objects = pyzbar.decode(gray)
 
     for obj in decoded_objects:
         if obj.type == 'QRCODE':
             try:
-                return obj.data.decode('utf-8')
+                qr_data = obj.data.decode('utf-8')
+                break
             except:
                 continue
 
     # Se não encontrou, tentar com diferentes pré-processamentos
-    # 1. Aumentar contraste
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    decoded_objects = pyzbar.decode(enhanced)
+    if qr_data is None:
+        # 1. Aumentar contraste
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        decoded_objects = pyzbar.decode(enhanced)
 
-    for obj in decoded_objects:
-        if obj.type == 'QRCODE':
-            try:
-                return obj.data.decode('utf-8')
-            except:
-                continue
+        for obj in decoded_objects:
+            if obj.type == 'QRCODE':
+                try:
+                    qr_data = obj.data.decode('utf-8')
+                    break
+                except:
+                    continue
 
-    # 2. Binarização adaptativa
-    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                    cv2.THRESH_BINARY, 11, 2)
-    decoded_objects = pyzbar.decode(binary)
+    if qr_data is None:
+        # 2. Binarização adaptativa
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                        cv2.THRESH_BINARY, 11, 2)
+        decoded_objects = pyzbar.decode(binary)
 
-    for obj in decoded_objects:
-        if obj.type == 'QRCODE':
-            try:
-                return obj.data.decode('utf-8')
-            except:
-                continue
+        for obj in decoded_objects:
+            if obj.type == 'QRCODE':
+                try:
+                    qr_data = obj.data.decode('utf-8')
+                    break
+                except:
+                    continue
 
-    return None
+    if qr_data is None:
+        return None, 1
+
+    # Parsear formato: XTRI-BJC3VP-D1 ou XTRI-BJC3VP-D2
+    if qr_data.endswith('-D2'):
+        sheet_code = qr_data[:-3]  # Remove -D2
+        return sheet_code, 91
+    elif qr_data.endswith('-D1'):
+        sheet_code = qr_data[:-3]  # Remove -D1
+        return sheet_code, 1
+    else:
+        # Formato antigo (sem sufixo) = DIA 1
+        return qr_data, 1
 
 
 def validate_sheet_code(code):
@@ -998,10 +1038,11 @@ def process_sheet():
             # Usar módulo QR com fallback (mais robusto)
             qr_result = read_qr_with_fallback(img_array)
             sheet_code = qr_result['sheet_code'] if qr_result['success'] else None
+            start_question = 1  # TODO: adicionar suporte a dia no módulo QR se necessário
             timings['qr_method'] = qr_result.get('method')
         else:
-            # Fallback para função interna
-            sheet_code = read_qr_code(img_array)
+            # Fallback para função interna (retorna tuple: sheet_code, start_question)
+            sheet_code, start_question = read_qr_code(img_array)
             timings['qr_method'] = 'internal'
 
         timings['qr_ms'] = round((time.time() - t0) * 1000, 2)
@@ -1070,17 +1111,24 @@ def process_sheet():
                    f"QR:{timings['qr_ms']}ms + DB:{timings['supabase_ms']}ms + "
                    f"OMR:{timings['omr_ms']}ms = {timings['total_ms']}ms")
 
+        # Obter info de dia
+        omr_start_question = result.get('start_question', 1)
+        day = 1 if omr_start_question == 1 else 2
+
         # Formatar resposta
         return jsonify({
             "status": "sucesso",
             "sheet_code": sheet_code,
+            "day": day,  # 1 para DIA 1 (questões 1-90), 2 para DIA 2 (questões 91-180)
+            "start_question": omr_start_question,  # 1 ou 91
             "student": {
                 "student_name": student.get('student_name') if student else None,
                 "enrollment": student.get('enrollment') if student else None,
                 "class_name": student.get('class_name') if student else None,
                 "exam_id": student.get('exam_id') if student else None
             } if student else None,
-            "answers": result['answers'],
+            "answers": result['answers'],  # Lista posicional (índice 0 = primeira questão do dia)
+            "answers_numbered": result.get('answers_dict', {}),  # Dict com números corretos
             "stats": stats,
             "timings": timings,
             "saved": saved
@@ -1421,8 +1469,9 @@ def batch_process():
                 if USE_QR_MODULE:
                     qr_result = read_qr_with_fallback(img_array)
                     sheet_code = qr_result['sheet_code'] if qr_result['success'] else None
+                    start_question = 1  # TODO: adicionar suporte a dia no módulo QR
                 else:
-                    sheet_code = read_qr_code(img_array)
+                    sheet_code, start_question = read_qr_code(img_array)
 
                 if not sheet_code:
                     results.append({
