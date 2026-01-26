@@ -14090,10 +14090,10 @@ ${problemReport.problemPages.map(p => `
                             <div key={i} className="flex flex-col items-center">
                               <span className="text-xs text-slate-500 mb-1">{questao}</span>
                               <Select
-                                value={resposta}
+                                value={resposta || undefined}
                                 onValueChange={(value) => {
                                   const novasRespostas = [...respostasArea];
-                                  novasRespostas[i] = value;
+                                  novasRespostas[i] = value === "CLEAR" ? "" : value;
                                   setNovoAlunoENEMData(prev => ({
                                     ...prev,
                                     [respostasKey]: novasRespostas
@@ -14110,7 +14110,7 @@ ${problemReport.problemPages.map(p => `
                                   <SelectValue placeholder="-" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">-</SelectItem>
+                                  <SelectItem value="CLEAR">-</SelectItem>
                                   <SelectItem value="A">A</SelectItem>
                                   <SelectItem value="B">B</SelectItem>
                                   <SelectItem value="C">C</SelectItem>
