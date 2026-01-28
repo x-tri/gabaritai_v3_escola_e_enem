@@ -2835,6 +2835,13 @@ export default function Home() {
       }));
       
       // Preparar dados para salvar
+      // DEBUG: Log questionContents antes de enviar
+      const qcNumbers = questionContents.map(qc => qc.questionNumber);
+      console.log(`[SAVE DEBUG] questionContents count: ${questionContents.length}`);
+      console.log(`[SAVE DEBUG] questionNumbers: min=${Math.min(...qcNumbers)}, max=${Math.max(...qcNumbers)}`);
+      console.log(`[SAVE DEBUG] primeiro 3: ${qcNumbers.slice(0, 3).join(', ')}`);
+      console.log(`[SAVE DEBUG] últimos 3: ${qcNumbers.slice(-3).join(', ')}`);
+
       const projetoData = {
         nome: nome.trim(),
         descricao: descricao || "",
@@ -4300,14 +4307,78 @@ export default function Home() {
 
     try {
       // 1. Buscar dados do projeto Dia 1
+      console.log("[MERGE] Buscando projeto:", idToUse);
       const response = await authFetch(`/api/projetos/${idToUse}`);
       if (!response.ok) {
         throw new Error("Falha ao carregar projeto Dia 1");
       }
       const { projeto: projetoDia1 } = await response.json();
-      
+
+      console.log("[MERGE] Projeto carregado:", projetoDia1?.nome);
+      console.log("[MERGE] Projeto students:", projetoDia1?.students?.length);
+      console.log("[MERGE] Projeto answerKey:", projetoDia1?.answerKey?.length);
+
+      // DEBUG: Verificar primeiro aluno do projeto
+      if (projetoDia1?.students?.length > 0) {
+        const primeiroAluno = projetoDia1.students[0];
+        console.log("[MERGE] Primeiro aluno do projeto:", {
+          id: primeiroAluno.id,
+          studentNumber: primeiroAluno.studentNumber,
+          answersLength: primeiroAluno.answers?.length,
+          primeiras5Respostas: primeiroAluno.answers?.slice(0, 5),
+          ultimas5Respostas: primeiroAluno.answers?.slice(-5),
+        });
+      }
+
+      // DEBUG: Verificar primeiro aluno do estado atual (Dia 2)
+      if (students.length > 0) {
+        const primeiroAlunoDia2 = students[0];
+        console.log("[MERGE] Primeiro aluno Dia 2 (estado):", {
+          id: primeiroAlunoDia2.id,
+          studentNumber: primeiroAlunoDia2.studentNumber,
+          answersLength: primeiroAlunoDia2.answers?.length,
+          primeiras5Respostas: primeiroAlunoDia2.answers?.slice(0, 5),
+          ultimas5Respostas: primeiroAlunoDia2.answers?.slice(-5),
+        });
+      }
+
       if (!projetoDia1 || !projetoDia1.students || projetoDia1.students.length === 0) {
         throw new Error("Projeto Dia 1 não tem alunos");
+      }
+
+      // Verificar se o projeto já foi mesclado anteriormente
+      // ENEM: Dia 1 (90 questões Q1-90) + Dia 2 (90 questões Q91-180) = 180 total
+      const ENEM_TOTAL_QUESTIONS = 180;
+      const ENEM_DAY_QUESTIONS = 90;
+      const primeiroAlunoProjeto = projetoDia1.students[0];
+      const projetoJaMesclado = projetoDia1.dia2Processado === true ||
+        (primeiroAlunoProjeto?.answers?.length >= ENEM_TOTAL_QUESTIONS);
+
+      if (projetoJaMesclado) {
+        toast({
+          title: "Projeto já mesclado",
+          description: "Este projeto já contém dados do Dia 1 + Dia 2. Para refazer o merge, delete o projeto e processe os dias separadamente.",
+          variant: "destructive",
+        });
+        setTriV2Loading(false);
+        return;
+      }
+
+      // Verificar se os alunos do Dia 2 (estado) são diferentes dos do projeto
+      // Comparamos as primeiras 10 respostas para detectar dados duplicados
+      const SAMPLE_SIZE = 10;
+      const primeiroAlunoDia2 = students[0];
+      const respostasIguais = primeiroAlunoProjeto?.answers?.slice(0, SAMPLE_SIZE).join(",") ===
+        primeiroAlunoDia2?.answers?.slice(0, SAMPLE_SIZE).join(",");
+
+      if (respostasIguais && primeiroAlunoDia2?.answers?.length <= ENEM_DAY_QUESTIONS) {
+        toast({
+          title: "Dados duplicados",
+          description: "Os alunos do Dia 2 parecem ser os mesmos do projeto carregado. Processe novos PDFs do Dia 2 antes de mesclar.",
+          variant: "destructive",
+        });
+        setTriV2Loading(false);
+        return;
       }
 
       toast({
@@ -5675,6 +5746,13 @@ export default function Home() {
       if (contentsToShow !== numQuestions) {
         setNumQuestions(contentsToShow);
       }
+
+      // DEBUG: Log newContents antes de setar
+      const ncNumbers = newContents.map(nc => nc.questionNumber);
+      console.log(`[IMPORT DEBUG] newContents count: ${newContents.length}`);
+      console.log(`[IMPORT DEBUG] questionNumbers: min=${Math.min(...ncNumbers)}, max=${Math.max(...ncNumbers)}`);
+      console.log(`[IMPORT DEBUG] primeiro 3: ${ncNumbers.slice(0, 3).join(', ')}`);
+      console.log(`[IMPORT DEBUG] últimos 3: ${ncNumbers.slice(-3).join(', ')}`);
 
       setQuestionContents(newContents);
       
