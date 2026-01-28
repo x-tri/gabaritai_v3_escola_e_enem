@@ -3493,6 +3493,15 @@ Para cada disciplina:
         return;
       }
 
+      // DEBUG: Log para verificar questionContents
+      console.log(`[PROJETOS] Salvando projeto "${nome}":`, {
+        questionContentsLength: questionContents?.length || 0,
+        questionContentsFirst: questionContents?.[0] || null,
+        answerKeyLength: answerKey?.length || 0,
+        studentsLength: students?.length || 0,
+        schoolId: schoolId || null
+      });
+
       const { data, error } = await supabaseAdmin
         .from('projetos')
         .insert({
@@ -3643,6 +3652,13 @@ Para cada disciplina:
 
       const projetoExistente = projetoDbToFrontend(existingData);
 
+      // DEBUG: Log para verificar questionContents no PUT
+      console.log(`[PROJETOS PUT] Atualizando projeto "${id}":`, {
+        questionContentsRecebido: questionContents?.length || 0,
+        questionContentsExistente: projetoExistente.questionContents?.length || 0,
+        primeiroRecebido: questionContents?.[0] || null
+      });
+
       // Se mergeStudents = true, mesclar alunos por matrícula
       let studentsFinais = students || projetoExistente.students;
       let answerKeyFinal = answerKey || projetoExistente.answerKey;
@@ -3783,20 +3799,22 @@ Para cada disciplina:
       }
 
       // Mesclar questionContents (180 elementos) - Dia 1 tem Q1-90, Dia 2 tem Q91-180
+      // SEMPRE mesclar questionContents para preservar dados de ambos os dias
       let questionContentsFinal = questionContents || projetoExistente.questionContents;
 
-      if (mergeStudents && questionContents && projetoExistente.questionContents) {
+      // Mesclar se AMBOS existirem (independente de mergeStudents)
+      if (questionContents && questionContents.length > 0 && projetoExistente.questionContents && projetoExistente.questionContents.length > 0) {
         // Criar mapa por questionNumber para merge eficiente
         const questionContentsMap = new Map<number, { questionNumber: number; content: string; answer?: string }>();
 
-        // Adicionar existentes primeiro
+        // Adicionar existentes primeiro (Dia 1 ou dados anteriores)
         for (const item of projetoExistente.questionContents) {
           if (item && typeof item.questionNumber === 'number') {
             questionContentsMap.set(item.questionNumber, item);
           }
         }
 
-        // Sobrescrever/adicionar novos
+        // Sobrescrever/adicionar novos (Dia 2 ou novos dados)
         for (const item of questionContents) {
           if (item && typeof item.questionNumber === 'number') {
             questionContentsMap.set(item.questionNumber, item);
@@ -3807,7 +3825,13 @@ Para cada disciplina:
         questionContentsFinal = Array.from(questionContentsMap.values())
           .sort((a, b) => a.questionNumber - b.questionNumber);
 
-        console.log(`[PROJETOS] questionContents mesclados: ${questionContentsFinal.length} questões`);
+        console.log(`[PROJETOS] questionContents mesclados: ${questionContentsFinal.length} questões (existente: ${projetoExistente.questionContents.length}, novo: ${questionContents.length})`);
+      } else if (questionContents && questionContents.length > 0) {
+        questionContentsFinal = questionContents;
+        console.log(`[PROJETOS] questionContents: usando novos ${questionContents.length} itens`);
+      } else if (projetoExistente.questionContents && projetoExistente.questionContents.length > 0) {
+        questionContentsFinal = projetoExistente.questionContents;
+        console.log(`[PROJETOS] questionContents: mantendo existentes ${projetoExistente.questionContents.length} itens`);
       }
 
       // Atualizar projeto no Supabase
