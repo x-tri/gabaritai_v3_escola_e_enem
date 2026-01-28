@@ -3825,13 +3825,11 @@ Para cada disciplina:
         questionContentsFinal = Array.from(questionContentsMap.values())
           .sort((a, b) => a.questionNumber - b.questionNumber);
 
-        console.log(`[PROJETOS] questionContents mesclados: ${questionContentsFinal.length} questões (existente: ${projetoExistente.questionContents.length}, novo: ${questionContents.length})`);
+        console.log(`[PROJETOS] questionContents merged: ${questionContentsFinal.length} items`);
       } else if (questionContents && questionContents.length > 0) {
         questionContentsFinal = questionContents;
-        console.log(`[PROJETOS] questionContents: usando novos ${questionContents.length} itens`);
       } else if (projetoExistente.questionContents && projetoExistente.questionContents.length > 0) {
         questionContentsFinal = projetoExistente.questionContents;
-        console.log(`[PROJETOS] questionContents: mantendo existentes ${projetoExistente.questionContents.length} itens`);
       }
 
       // Atualizar projeto no Supabase
