@@ -2835,13 +2835,6 @@ export default function Home() {
       }));
       
       // Preparar dados para salvar
-      // DEBUG: Log questionContents antes de enviar
-      const qcNumbers = questionContents.map(qc => qc.questionNumber);
-      console.log(`[SAVE DEBUG] questionContents count: ${questionContents.length}`);
-      console.log(`[SAVE DEBUG] questionNumbers: min=${Math.min(...qcNumbers)}, max=${Math.max(...qcNumbers)}`);
-      console.log(`[SAVE DEBUG] primeiro 3: ${qcNumbers.slice(0, 3).join(', ')}`);
-      console.log(`[SAVE DEBUG] últimos 3: ${qcNumbers.slice(-3).join(', ')}`);
-
       const projetoData = {
         nome: nome.trim(),
         descricao: descricao || "",
@@ -4307,40 +4300,13 @@ export default function Home() {
 
     try {
       // 1. Buscar dados do projeto Dia 1
-      console.log("[MERGE] Buscando projeto:", idToUse);
       const response = await authFetch(`/api/projetos/${idToUse}`);
       if (!response.ok) {
         throw new Error("Falha ao carregar projeto Dia 1");
       }
       const { projeto: projetoDia1 } = await response.json();
 
-      console.log("[MERGE] Projeto carregado:", projetoDia1?.nome);
-      console.log("[MERGE] Projeto students:", projetoDia1?.students?.length);
-      console.log("[MERGE] Projeto answerKey:", projetoDia1?.answerKey?.length);
-
-      // DEBUG: Verificar primeiro aluno do projeto
-      if (projetoDia1?.students?.length > 0) {
-        const primeiroAluno = projetoDia1.students[0];
-        console.log("[MERGE] Primeiro aluno do projeto:", {
-          id: primeiroAluno.id,
-          studentNumber: primeiroAluno.studentNumber,
-          answersLength: primeiroAluno.answers?.length,
-          primeiras5Respostas: primeiroAluno.answers?.slice(0, 5),
-          ultimas5Respostas: primeiroAluno.answers?.slice(-5),
-        });
-      }
-
-      // DEBUG: Verificar primeiro aluno do estado atual (Dia 2)
-      if (students.length > 0) {
-        const primeiroAlunoDia2 = students[0];
-        console.log("[MERGE] Primeiro aluno Dia 2 (estado):", {
-          id: primeiroAlunoDia2.id,
-          studentNumber: primeiroAlunoDia2.studentNumber,
-          answersLength: primeiroAlunoDia2.answers?.length,
-          primeiras5Respostas: primeiroAlunoDia2.answers?.slice(0, 5),
-          ultimas5Respostas: primeiroAlunoDia2.answers?.slice(-5),
-        });
-      }
+      console.log(`[MERGE] Projeto Dia 1: ${projetoDia1?.nome} (${projetoDia1?.students?.length} alunos)`);
 
       if (!projetoDia1 || !projetoDia1.students || projetoDia1.students.length === 0) {
         throw new Error("Projeto Dia 1 não tem alunos");
@@ -4398,10 +4364,6 @@ export default function Home() {
 
       const gabaritoCompleto = [...gabaritoDia1.slice(0, 90), ...gabaritoDia2Real];
 
-      console.log("[MERGE] Gabarito Dia 1:", gabaritoDia1.length, "questões, slice(0,90):", gabaritoDia1.slice(0, 5).join(","));
-      console.log("[MERGE] Gabarito Dia 2:", gabaritoDia2.length, "questões, usando posições 90-179:", gabaritoDia2Real.slice(0, 5).join(","));
-      console.log("[MERGE] Gabarito Completo:", gabaritoCompleto.length, "questões");
-
       // 3. Mesclar alunos por MATRÍCULA (studentNumber) - BLINDAGEM TOTAL
       // Matrícula é o ID único - nenhum aluno pode ser perdido!
       
@@ -4422,10 +4384,6 @@ export default function Home() {
         ...Array.from(alunosDia1Map.keys()),
         ...Array.from(alunosDia2Map.keys()),
       ]);
-      
-      console.log("[MERGE] Total matrículas únicas:", todasMatriculas.size);
-      console.log("[MERGE] Alunos Dia 1:", alunosDia1Map.size);
-      console.log("[MERGE] Alunos Dia 2:", alunosDia2Map.size);
 
       const alunosMesclados: any[] = [];
       const alunosSoDia1: string[] = [];
@@ -4526,26 +4484,18 @@ export default function Home() {
           fezDia2: !!alunoDia2,
         };
         
-        // Log de debug detalhado e coleta de alunos incompletos
+        // Coletar alunos incompletos
         if (!alunoDia1) {
-          console.log(`[MERGE] ⚠️ Aluno ${matricula} só fez Dia 2`);
           alunosSoDia2.push(matricula);
         } else if (!alunoDia2) {
-          console.log(`[MERGE] ⚠️ Aluno ${matricula} só fez Dia 1`);
           alunosSoDia1.push(matricula);
-        } else {
-          console.log(`[MERGE] ✅ Aluno ${matricula} fez Dia 1 + Dia 2`);
-          console.log(`[MERGE]   Respostas: Dia1[0-4]=${respostasDia1.slice(0,5).join(",")}, Dia2[0-4]=${respostasDia2.slice(0,5).join(",")}`);
-          console.log(`[MERGE]   Acertos: LC=${areaCorrectAnswersMesclados.LC} CH=${areaCorrectAnswersMesclados.CH} CN=${areaCorrectAnswersMesclados.CN} MT=${areaCorrectAnswersMesclados.MT}`);
         }
-        
+
         alunosMesclados.push(alunoMesclado);
       });
-      
+
       // Ordenar por matrícula
       alunosMesclados.sort((a, b) => a.studentNumber.localeCompare(b.studentNumber));
-
-      console.log("[MERGE] Alunos mesclados:", alunosMesclados.length);
 
       // 4. Atualizar estados
       setStudents(alunosMesclados);
@@ -4559,8 +4509,6 @@ export default function Home() {
       }
 
       // 5. RECALCULAR TRI automaticamente com os dados mesclados
-      console.log("[MERGE] Recalculando TRI com gabarito completo de 180 questões...");
-
       // Preparar dados para o cálculo de TRI
       // Converter alunosMesclados para o formato esperado por calculateTRIV2
       const studentsParaTRI = alunosMesclados.map(aluno => ({
@@ -4581,11 +4529,6 @@ export default function Home() {
         triResult = await calculateTRIV2(gabaritoCompleto, studentsParaTRI, "ENEM");
 
         if (triResult) {
-          console.log("[MERGE] TRI recalculada com sucesso!");
-
-          // O calculateTRIV2 já atualiza os estados triScores, triScoresByArea, etc.
-          // Mas precisamos atualizar os alunosMesclados com os novos areaCorrectAnswers
-
           // Atualizar alunosMesclados com os novos dados calculados
           triResult.studentsWithAreas?.forEach((studentWithAreas: any) => {
             const alunoIdx = alunosMesclados.findIndex(a => a.id === studentWithAreas.id);
@@ -4593,22 +4536,11 @@ export default function Home() {
               alunosMesclados[alunoIdx].areaCorrectAnswers = studentWithAreas.areaCorrectAnswers || alunosMesclados[alunoIdx].areaCorrectAnswers;
             }
           });
-
-          // Log dos resultados
-          alunosMesclados.forEach(aluno => {
-            const triByArea = triScoresByArea.get(aluno.id) || {};
-            const status = aluno.fezDia1 && aluno.fezDia2 ? "✅ Completo" :
-                           aluno.fezDia1 ? "⚠️ Só Dia 1" : "⚠️ Só Dia 2";
-            const acertos = aluno.areaCorrectAnswers || {};
-            console.log(`[MERGE] ${status} ${aluno.studentNumber} → Acertos: LC=${acertos.LC || 0} CH=${acertos.CH || 0} CN=${acertos.CN || 0} MT=${acertos.MT || 0}`);
-          });
         }
       } catch (triError) {
         console.error("[MERGE] Erro ao recalcular TRI:", triError);
         // Continua mesmo com erro - os dados mesclados ainda serão salvos
       }
-
-      console.log("[MERGE] Total alunos processados:", alunosMesclados.length);
 
       // 7. Salvar projeto atualizado - USAR OS SCORES DO triResult (retornado pelo calculateTRIV2)
       // Pegar os maps do resultado do cálculo TRI ou usar maps vazios se falhou
@@ -4637,9 +4569,7 @@ export default function Home() {
         throw new Error(`Falha ao salvar projeto: ${saveResp.status}`);
       }
 
-      // 🔴 FIX: Atualizar estado local do React com os dados mesclados
-      // Sem isso, a UI continuava mostrando os dados antigos (N/F)
-      console.log("[MERGE] Atualizando estado local com dados mesclados...");
+      // Atualizar estado local do React com os dados mesclados
       setStudents(alunosMesclados);
       setAnswerKey(gabaritoCompleto);
       setNumQuestions(180);
@@ -5746,13 +5676,6 @@ export default function Home() {
       if (contentsToShow !== numQuestions) {
         setNumQuestions(contentsToShow);
       }
-
-      // DEBUG: Log newContents antes de setar
-      const ncNumbers = newContents.map(nc => nc.questionNumber);
-      console.log(`[IMPORT DEBUG] newContents count: ${newContents.length}`);
-      console.log(`[IMPORT DEBUG] questionNumbers: min=${Math.min(...ncNumbers)}, max=${Math.max(...ncNumbers)}`);
-      console.log(`[IMPORT DEBUG] primeiro 3: ${ncNumbers.slice(0, 3).join(', ')}`);
-      console.log(`[IMPORT DEBUG] últimos 3: ${ncNumbers.slice(-3).join(', ')}`);
 
       setQuestionContents(newContents);
       
