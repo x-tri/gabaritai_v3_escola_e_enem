@@ -5010,7 +5010,7 @@ Para cada disciplina:
       }
 
       // Gerar nova senha
-      const novaSenha = `${matricula || 'aluno'}${Math.floor(1000 + Math.random() * 9000)}`;
+      const novaSenha = "SENHA123";
 
       // Atualizar senha no Supabase Auth
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -5660,7 +5660,7 @@ Para cada disciplina:
       for (const projeto of projetos || []) {
         const students = (projeto.students as any[]) || [];
         const triScoresByArea = (projeto.tri_scores_by_area as Record<string, any>) || {};
-
+        
         // Buscar aluno pela matrícula
         const studentData = students.find((s: any) =>
           (s.studentNumber || s.matricula) === studentNumber

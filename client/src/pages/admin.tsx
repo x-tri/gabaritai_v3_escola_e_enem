@@ -57,6 +57,7 @@ interface Student {
   student_number: string | null;
   turma: string | null;
   created_at: string;
+  profile_id: string
 }
 
 interface StudentsResponse {
@@ -558,7 +559,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studentId: studentToResetPassword.id,
+          studentId: studentToResetPassword.profile_id,
           matricula: studentToResetPassword.student_number,
         }),
       });
