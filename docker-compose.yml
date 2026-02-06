@@ -1,0 +1,25 @@
+services:
+  server_client:
+    build:
+      context: .
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - orm_service
+      - tri_service
+
+  orm_service:
+    build:
+      context: ./python_omr_service/
+    env_file:
+      - ./python_omr_service/.env
+    ports:
+      - "5002:5002"
+  
+  tri_service:
+    build:
+      context: ./python_tri_service/
+    ports:
+      - "5003:5003"

@@ -33,14 +33,10 @@ COPY package.json package-lock.json ./
 RUN npm install --legacy-peer-deps
 
 # Copiar código fonte necessário para build
-COPY server/ ./server/
-COPY shared/ ./shared/
-COPY script/ ./script/
-COPY tsconfig.json ./
-COPY vite.config.ts ./
+COPY . .
 
 # Build do servidor apenas (sem client - deploy separado no Vercel)
-RUN npx tsx script/build-server.ts
+RUN npx tsx script/build.ts
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runner - Imagem mínima para produção
@@ -83,8 +79,9 @@ COPY --from=builder /app/dist ./dist
 COPY tri/ ./tri/
 
 # Copiar assets (logos, imagens) e ajustar permissões
-COPY server/assets/ ./assets/
-RUN chmod -R 644 ./assets/* && chown -R expressjs:nodejs ./assets
+RUN mkdir ./server
+COPY server/assets/ ./server/assets/
+RUN chmod -R 644 ./server/assets/* && chown -R expressjs:nodejs ./server/assets
 
 # Copiar templates de gabarito para geração de PDFs personalizados
 COPY attached_assets/ ./attached_assets/
