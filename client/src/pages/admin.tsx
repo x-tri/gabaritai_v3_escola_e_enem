@@ -946,8 +946,9 @@ export default function AdminPage() {
     setIsImporting(true);
     setImportProgress(10);
 
+    let progressInterval: ReturnType<typeof setInterval> | undefined;
     try {
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setImportProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
@@ -960,7 +961,6 @@ export default function AdminPage() {
         }),
       });
 
-      clearInterval(progressInterval);
       setImportProgress(100);
 
       if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
@@ -985,6 +985,9 @@ export default function AdminPage() {
       });
       setShowResultsModal(true);
     } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       setIsImporting(false);
       setImportProgress(0);
     }
