@@ -39,9 +39,9 @@ NUM_COLUMNS = 6
 OPTIONS = ['A', 'B', 'C', 'D', 'E']
 
 # Thresholds de detecção (calibrados para o template X-TRI)
-# AJUSTADO: reduzido de 40% para 28% para detectar marcações leves/cinzas
-FILL_THRESHOLD = 28      # % mínimo de pixels escuros para considerar marcado
-DARK_PIXEL_VALUE = 170   # Valor de pixel considerado "escuro" (0-255) - aumentado para incluir cinzas
+# AJUSTADO: mais sensível para detectar marcações leves/cinzas e imperfeitas
+FILL_THRESHOLD = 22      # % mínimo de pixels escuros para considerar marcado
+DARK_PIXEL_VALUE = 185   # Valor de pixel considerado "escuro" (0-255) - inclui cinzas mais claros
 
 
 # ============================================================
