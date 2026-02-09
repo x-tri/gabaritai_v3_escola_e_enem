@@ -26,10 +26,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código da aplicação
-COPY app.py .
-COPY template_calibration.json .
-COPY xtri_gabarito_reader.py .
-COPY qr_reader_module.py .
+COPY . .
 
 # Criar usuário não-root
 RUN useradd --create-home --shell /bin/bash appuser && \
