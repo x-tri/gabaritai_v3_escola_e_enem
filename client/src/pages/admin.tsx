@@ -1,232 +1,244 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { authFetch } from '@/lib/authFetch';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { authFetch } from "@/lib/authFetch";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, KeyRound, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Printer, FileText, Building2, ClipboardList, Plus, Edit2, Mail, Send } from 'lucide-react';
-import TrashIcon from '@/components/ui/trash-icon';
-import { Link } from 'wouter';
-import { CsvUploader, StudentRow } from '@/components/CsvUploader';
-import { ProfileMenu } from '@/components/ProfileMenu';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import ReactMarkdown from 'react-markdown';
-
-interface ImportResult {
-  matricula: string;
-  nome: string;
-  turma: string;
-  email: string;
-  senha: string;
-  status: 'created' | 'updated' | 'error';
-  message?: string;
-}
-
-interface ImportResponse {
-  success: boolean;
-  summary: {
-    total: number;
-    created: number;
-    updated: number;
-    errors: number;
-  };
-  results: ImportResult[];
-}
-
-interface Student {
-  id: string;
-  name: string;
-  email: string;
-  student_number: string | null;
-  turma: string | null;
-  created_at: string;
-  profile_id: string
-}
-
-interface StudentsResponse {
-  success: boolean;
-  students: Student[];
-  pagination: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-  turmas: string[];
-}
-
-interface Turma {
-  nome: string;
-  alunosCount: number;
-}
-
-interface TurmaAluno {
-  id: string;
-  name: string;
-  student_number: string | null;
-  turma: string | null;
-  email: string;
-}
-
-interface School {
-  id: string;
-  name: string;
-  slug: string;
-  created_at: string;
-}
-
-interface Simulado {
-  id: string;
-  title: string;
-  school_id: string;
-  schools?: { id: string; name: string };
-  status: string;
-  total_questions: number;
-  template_type: string;
-  created_at: string;
-  alunos_count?: number;
-}
-
-interface Coordinator {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  school_id: string | null;
-  allowed_series: string[] | null;
-  created_at: string;
-  schools?: { id: string; name: string } | null;
-}
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  LogOut,
+  Users,
+  GraduationCap,
+  Settings,
+  ArrowLeft,
+  Download,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Search,
+  RefreshCw,
+  KeyRound,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Printer,
+  FileText,
+  Building2,
+  ClipboardList,
+  Plus,
+  Edit2,
+  Mail,
+  Send,
+} from "lucide-react";
+import TrashIcon from "@/components/ui/trash-icon";
+import { Link } from "wouter";
+import { CsvUploader, StudentRow } from "@/components/CsvUploader";
+import { ProfileMenu } from "@/components/ProfileMenu";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import ReactMarkdown from "react-markdown";
+import { DropdownTurma } from "@/components/DropdownTurma";
+import {
+  AdminMessage,
+  Coordinator,
+  ImportResponse,
+  ImportResult,
+  School,
+  Simulado,
+  Student,
+  StudentsResponse,
+  Turma,
+  TurmaAluno,
+} from "./admin.interfaces";
 
 export default function AdminPage() {
   const { profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('escolas');
+  const [activeTab, setActiveTab] = useState("escolas");
 
   // School expansion state
   const [expandedSchoolId, setExpandedSchoolId] = useState<string | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'provas' | 'turmas' | 'alunos'>('provas');
+  const [activeSubTab, setActiveSubTab] = useState<
+    "provas" | "turmas" | "alunos"
+  >("provas");
 
   // CSV Upload states
   const [pendingStudents, setPendingStudents] = useState<StudentRow[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [importResults, setImportResults] = useState<ImportResponse | null>(null);
+  const [importResults, setImportResults] = useState<ImportResponse | null>(
+    null,
+  );
   const [showResultsModal, setShowResultsModal] = useState(false);
 
   // Students List states (per school)
   const [students, setStudents] = useState<Student[]>([]);
   const [turmas, setTurmas] = useState<string[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTurma, setSelectedTurma] = useState<string>('all');
-  const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 20, totalPages: 0 });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTurma, setSelectedTurma] = useState<string>("all");
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    limit: 20,
+    totalPages: 0,
+  });
 
   // Action states
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
-  const [studentToResetPassword, setStudentToResetPassword] = useState<Student | null>(null);
+  const [studentToResetPassword, setStudentToResetPassword] =
+    useState<Student | null>(null);
   const [newPassword, setNewPassword] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   // Turmas states (per school)
   const [turmasList, setTurmasList] = useState<Turma[]>([]);
   const [isLoadingTurmas, setIsLoadingTurmas] = useState(false);
-  const [selectedTurmaForPrint, setSelectedTurmaForPrint] = useState<string | null>(null);
+  const [selectedTurmaForPrint, setSelectedTurmaForPrint] = useState<
+    string | null
+  >(null);
   const [turmaAlunos, setTurmaAlunos] = useState<TurmaAluno[]>([]);
   const [isLoadingTurmaAlunos, setIsLoadingTurmaAlunos] = useState(false);
-  const [generatingPdfForTurma, setGeneratingPdfForTurma] = useState<string | null>(null);
+  const [generatingPdfForTurma, setGeneratingPdfForTurma] = useState<
+    string | null
+  >(null);
 
   // Schools states
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoadingSchools, setIsLoadingSchools] = useState(false);
   const [schoolToEdit, setSchoolToEdit] = useState<School | null>(null);
   const [showSchoolModal, setShowSchoolModal] = useState(false);
-  const [schoolForm, setSchoolForm] = useState({ name: '', slug: '' });
+  const [schoolForm, setSchoolForm] = useState({ name: "", slug: "" });
 
   // Simulados states (per school)
   const [simulados, setSimulados] = useState<Simulado[]>([]);
   const [isLoadingSimulados, setIsLoadingSimulados] = useState(false);
   const [simuladoToEdit, setSimuladoToEdit] = useState<Simulado | null>(null);
   const [showSimuladoModal, setShowSimuladoModal] = useState(false);
-  const [simuladoForm, setSimuladoForm] = useState({ title: '', school_id: '', total_questions: 90 });
+  const [simuladoForm, setSimuladoForm] = useState({
+    title: "",
+    school_id: "",
+    total_questions: 90,
+  });
 
   // Delete states
   const [schoolToDelete, setSchoolToDelete] = useState<School | null>(null);
-  const [simuladoToDelete, setSimuladoToDelete] = useState<Simulado | null>(null);
+  const [simuladoToDelete, setSimuladoToDelete] = useState<Simulado | null>(
+    null,
+  );
 
   // Nova Turma states
   const [showTurmaModal, setShowTurmaModal] = useState(false);
-  const [turmaForm, setTurmaForm] = useState({ nome: '' });
+  const [turmaForm, setTurmaForm] = useState({ nome: "" });
 
   // Novo Aluno states
   const [showAlunoModal, setShowAlunoModal] = useState(false);
-  const [alunoForm, setAlunoForm] = useState({ nome: '', matricula: '', turma: '' });
+  const [alunoForm, setAlunoForm] = useState({
+    nome: "",
+    matricula: "",
+    turma: "",
+  });
 
   // Coordinator states
   const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
   const [isLoadingCoordinators, setIsLoadingCoordinators] = useState(false);
   const [showCoordinatorModal, setShowCoordinatorModal] = useState(false);
-  const [coordinatorToEdit, setCoordinatorToEdit] = useState<Coordinator | null>(null);
-  const [coordinatorToDelete, setCoordinatorToDelete] = useState<Coordinator | null>(null);
+  const [coordinatorToEdit, setCoordinatorToEdit] =
+    useState<Coordinator | null>(null);
+  const [coordinatorToDelete, setCoordinatorToDelete] =
+    useState<Coordinator | null>(null);
   const [coordinatorForm, setCoordinatorForm] = useState({
-    email: '',
-    name: '',
-    password: '',
-    school_id: '',
-    allowed_series: [] as string[]
+    email: "",
+    name: "",
+    password: "",
+    school_id: "",
+    allowed_series: [] as string[],
   });
-  const [showResetPasswordModal, setShowResetPasswordModal] = useState<Coordinator | null>(null);
-  const [newCoordinatorPassword, setNewCoordinatorPassword] = useState('');
+  const [showResetPasswordModal, setShowResetPasswordModal] =
+    useState<Coordinator | null>(null);
+  const [newCoordinatorPassword, setNewCoordinatorPassword] = useState("");
 
   // Reset all passwords states
   const [showResetAllModal, setShowResetAllModal] = useState(false);
   const [isResetAllLoading, setIsResetAllLoading] = useState(false);
-  const [resetAllResults, setResetAllResults] = useState<{ reset: number; created: number; errors: number } | null>(null);
+  const [resetAllResults, setResetAllResults] = useState<{
+    reset: number;
+    created: number;
+    errors: number;
+  } | null>(null);
 
   // Admin Messages states
-  interface AdminMessage {
-    id: string;
-    title: string;
-    content: string;
-    target_type: 'students' | 'schools';
-    filter_school_ids: string[] | null;
-    filter_turmas: string[] | null;
-    filter_series: string[] | null;
-    created_at: string;
-    expires_at: string;
-    recipients_count?: number;
-  }
   const [adminMessages, setAdminMessages] = useState<AdminMessage[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [messageForm, setMessageForm] = useState({
-    title: '',
-    content: '',
-    target_type: 'students' as 'students' | 'schools',
+    title: "",
+    content: "",
+    target_type: "students" as "students" | "schools",
     filter_school_ids: [] as string[],
     filter_turmas: [] as string[],
     filter_series: [] as string[],
   });
   const [showMessagePreview, setShowMessagePreview] = useState(false);
-  const [messageToDelete, setMessageToDelete] = useState<AdminMessage | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<AdminMessage | null>(
+    null,
+  );
 
-  const isSuperAdmin = profile?.role === 'super_admin';
+  const isSuperAdmin = profile?.role === "super_admin";
 
   const handleLogout = async () => {
     await signOut();
@@ -236,13 +248,13 @@ export default function AdminPage() {
   const fetchSchools = useCallback(async () => {
     setIsLoadingSchools(true);
     try {
-      const response = await authFetch('/api/schools');
+      const response = await authFetch("/api/schools");
       const data = await response.json();
       if (data.success) {
         setSchools(data.schools);
       }
     } catch (error) {
-      console.error('Erro ao buscar escolas:', error);
+      console.error("Erro ao buscar escolas:", error);
     } finally {
       setIsLoadingSchools(false);
     }
@@ -252,61 +264,74 @@ export default function AdminPage() {
   const fetchTurmasForSchool = useCallback(async (schoolId: string) => {
     setIsLoadingTurmas(true);
     try {
-      const response = await authFetch(`/api/admin/turmas?school_id=${schoolId}`);
+      const response = await authFetch(
+        `/api/admin/turmas?school_id=${schoolId}`,
+      );
       const data = await response.json();
       if (data.success) {
         setTurmasList(data.turmas);
       }
     } catch (error) {
-      console.error('Erro ao buscar turmas:', error);
+      console.error("Erro ao buscar turmas:", error);
     } finally {
       setIsLoadingTurmas(false);
     }
   }, []);
 
   // Fetch alunos de uma turma
-  const fetchTurmaAlunos = useCallback(async (turmaNome: string, schoolId: string) => {
-    setIsLoadingTurmaAlunos(true);
-    try {
-      const response = await authFetch(`/api/admin/turmas/${encodeURIComponent(turmaNome)}/alunos?school_id=${schoolId}`);
-      const data = await response.json();
-      if (data.success) {
-        setTurmaAlunos(data.alunos);
+  const fetchTurmaAlunos = useCallback(
+    async (turmaNome: string, schoolId: string) => {
+      setIsLoadingTurmaAlunos(true);
+      try {
+        const response = await authFetch(
+          `/api/admin/turmas/${encodeURIComponent(turmaNome)}/alunos?school_id=${schoolId}`,
+        );
+        const data = await response.json();
+        if (data.success) {
+          setTurmaAlunos(data.alunos);
+        }
+      } catch (error) {
+        console.error("Erro ao buscar alunos da turma:", error);
+      } finally {
+        setIsLoadingTurmaAlunos(false);
       }
-    } catch (error) {
-      console.error('Erro ao buscar alunos da turma:', error);
-    } finally {
-      setIsLoadingTurmaAlunos(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Gerar PDFs de gabaritos
-  const handleGenerateGabaritos = async (turmaNome: string, schoolId: string, dia: number = 1) => {
+  const handleGenerateGabaritos = async (
+    turmaNome: string,
+    schoolId: string,
+    dia: number = 1,
+  ) => {
     setGeneratingPdfForTurma(turmaNome); // Marca qual turma está gerando
     try {
-      const response = await authFetch('/api/admin/generate-gabaritos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await authFetch("/api/admin/generate-gabaritos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ turma: turmaNome, school_id: schoolId, dia }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Erro ao gerar gabaritos');
+        throw new Error(error.error || "Erro ao gerar gabaritos");
       }
 
       const blob = await response.blob();
-      const filename = `gabaritos_dia${dia}_${turmaNome.replace(/\s+/g, '_')}.pdf`;
+      const filename = `gabaritos_dia${dia}_${turmaNome.replace(/\s+/g, "_")}.pdf`;
 
       // Tentar usar File System Access API (Chrome moderno)
-      if ('showSaveFilePicker' in window) {
+      if ("showSaveFilePicker" in window) {
         try {
           const handle = await (window as any).showSaveFilePicker({
             suggestedName: filename,
-            types: [{
-              description: 'PDF Document',
-              accept: { 'application/pdf': ['.pdf'] },
-            }],
+            types: [
+              {
+                description: "PDF Document",
+                accept: { "application/pdf": [".pdf"] },
+              },
+            ],
           });
           const writable = await handle.createWritable();
           await writable.write(blob);
@@ -314,13 +339,15 @@ export default function AdminPage() {
           return;
         } catch (err: any) {
           // Usuário cancelou ou API falhou, tentar fallback
-          if (err.name === 'AbortError') return;
+          if (err.name === "AbortError") return;
         }
       }
 
       // Fallback: método tradicional com link
-      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-      const a = document.createElement('a');
+      const url = window.URL.createObjectURL(
+        new Blob([blob], { type: "application/pdf" }),
+      );
+      const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
@@ -328,8 +355,8 @@ export default function AdminPage() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Erro ao gerar gabaritos:', error);
-      alert(error instanceof Error ? error.message : 'Erro ao gerar gabaritos');
+      console.error("Erro ao gerar gabaritos:", error);
+      alert(error instanceof Error ? error.message : "Erro ao gerar gabaritos");
     } finally {
       setGeneratingPdfForTurma(null); // Limpa o estado
     }
@@ -345,55 +372,60 @@ export default function AdminPage() {
         setSimulados(data.simulados);
       }
     } catch (error) {
-      console.error('Erro ao buscar simulados:', error);
+      console.error("Erro ao buscar simulados:", error);
     } finally {
       setIsLoadingSimulados(false);
     }
   }, []);
 
   // Fetch students for a specific school
-  const fetchStudentsForSchool = useCallback(async (schoolId: string, page = 1) => {
-    setIsLoadingStudents(true);
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: pagination.limit.toString(),
-        school_id: schoolId,
-      });
+  const fetchStudentsForSchool = useCallback(
+    async (schoolId: string, page = 1) => {
+      setIsLoadingStudents(true);
+      try {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: pagination.limit.toString(),
+          school_id: schoolId,
+        });
 
-      if (selectedTurma && selectedTurma !== 'all') {
-        params.append('turma', selectedTurma);
+        if (selectedTurma && selectedTurma !== "all") {
+          params.append("turma", selectedTurma);
+        }
+
+        if (searchTerm) {
+          params.append("search", searchTerm);
+        }
+
+        const response = await authFetch(`/api/admin/students?${params}`);
+        const data: StudentsResponse = await response.json();
+
+        if (data.success) {
+          setStudents(data.students);
+          setPagination(data.pagination);
+          setTurmas(data.turmas);
+        }
+      } catch (error) {
+        console.error("Erro ao buscar alunos:", error);
+      } finally {
+        setIsLoadingStudents(false);
       }
-
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
-
-      const response = await authFetch(`/api/admin/students?${params}`);
-      const data: StudentsResponse = await response.json();
-
-      if (data.success) {
-        setStudents(data.students);
-        setPagination(data.pagination);
-        setTurmas(data.turmas);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar alunos:', error);
-    } finally {
-      setIsLoadingStudents(false);
-    }
-  }, [selectedTurma, searchTerm, pagination.limit]);
+    },
+    [selectedTurma, searchTerm, pagination.limit],
+  );
 
   // School CRUD handlers
   const handleSaveSchool = async () => {
     setIsActionLoading(true);
     try {
-      const method = schoolToEdit ? 'PUT' : 'POST';
-      const url = schoolToEdit ? `/api/schools/${schoolToEdit.id}` : '/api/schools';
+      const method = schoolToEdit ? "PUT" : "POST";
+      const url = schoolToEdit
+        ? `/api/schools/${schoolToEdit.id}`
+        : "/api/schools";
 
       const response = await authFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(schoolForm),
       });
 
@@ -402,13 +434,13 @@ export default function AdminPage() {
         fetchSchools();
         setShowSchoolModal(false);
         setSchoolToEdit(null);
-        setSchoolForm({ name: '', slug: '' });
+        setSchoolForm({ name: "", slug: "" });
       } else {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao salvar escola:', error);
-      alert('Erro ao salvar escola');
+      console.error("Erro ao salvar escola:", error);
+      alert("Erro ao salvar escola");
     } finally {
       setIsActionLoading(false);
     }
@@ -418,12 +450,14 @@ export default function AdminPage() {
   const handleSaveSimulado = async () => {
     setIsActionLoading(true);
     try {
-      const method = simuladoToEdit ? 'PUT' : 'POST';
-      const url = simuladoToEdit ? `/api/simulados/${simuladoToEdit.id}` : '/api/simulados';
+      const method = simuladoToEdit ? "PUT" : "POST";
+      const url = simuladoToEdit
+        ? `/api/simulados/${simuladoToEdit.id}`
+        : "/api/simulados";
 
       const response = await authFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: simuladoForm.title,
           school_id: simuladoForm.school_id || expandedSchoolId,
@@ -438,13 +472,13 @@ export default function AdminPage() {
         }
         setShowSimuladoModal(false);
         setSimuladoToEdit(null);
-        setSimuladoForm({ title: '', school_id: '', total_questions: 90 });
+        setSimuladoForm({ title: "", school_id: "", total_questions: 90 });
       } else {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao salvar simulado:', error);
-      alert('Erro ao salvar simulado');
+      console.error("Erro ao salvar simulado:", error);
+      alert("Erro ao salvar simulado");
     } finally {
       setIsActionLoading(false);
     }
@@ -476,7 +510,7 @@ export default function AdminPage() {
     setIsActionLoading(true);
     try {
       const response = await authFetch(`/api/schools/${schoolToDelete.id}`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
 
       const data = await response.json();
@@ -489,8 +523,8 @@ export default function AdminPage() {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao excluir escola:', error);
-      alert('Erro ao excluir escola');
+      console.error("Erro ao excluir escola:", error);
+      alert("Erro ao excluir escola");
     } finally {
       setIsActionLoading(false);
       setSchoolToDelete(null);
@@ -502,9 +536,12 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await authFetch(`/api/simulados/${simuladoToDelete.id}`, {
-        method: 'DELETE',
-      });
+      const response = await authFetch(
+        `/api/simulados/${simuladoToDelete.id}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       const data = await response.json();
       if (data.success) {
@@ -515,8 +552,8 @@ export default function AdminPage() {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao excluir simulado:', error);
-      alert('Erro ao excluir simulado');
+      console.error("Erro ao excluir simulado:", error);
+      alert("Erro ao excluir simulado");
     } finally {
       setIsActionLoading(false);
       setSimuladoToDelete(null);
@@ -528,9 +565,12 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await authFetch(`/api/admin/students/${studentToDelete.id}`, {
-        method: 'DELETE',
-      });
+      const response = await authFetch(
+        `/api/admin/students/${studentToDelete.id}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       const data = await response.json();
 
@@ -542,8 +582,8 @@ export default function AdminPage() {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao remover aluno:', error);
-      alert('Erro ao remover aluno');
+      console.error("Erro ao remover aluno:", error);
+      alert("Erro ao remover aluno");
     } finally {
       setIsActionLoading(false);
       setStudentToDelete(null);
@@ -555,9 +595,9 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await authFetch('/api/admin/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await authFetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studentId: studentToResetPassword.profile_id,
           matricula: studentToResetPassword.student_number,
@@ -573,8 +613,8 @@ export default function AdminPage() {
         setStudentToResetPassword(null);
       }
     } catch (error) {
-      console.error('Erro ao resetar senha:', error);
-      alert('Erro ao resetar senha');
+      console.error("Erro ao resetar senha:", error);
+      alert("Erro ao resetar senha");
       setStudentToResetPassword(null);
     } finally {
       setIsActionLoading(false);
@@ -587,9 +627,9 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await authFetch('/api/admin/turmas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await authFetch("/api/admin/turmas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome: turmaForm.nome,
           school_id: expandedSchoolId,
@@ -600,13 +640,13 @@ export default function AdminPage() {
       if (data.success) {
         fetchTurmasForSchool(expandedSchoolId);
         setShowTurmaModal(false);
-        setTurmaForm({ nome: '' });
+        setTurmaForm({ nome: "" });
       } else {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao criar turma:', error);
-      alert('Erro ao criar turma');
+      console.error("Erro ao criar turma:", error);
+      alert("Erro ao criar turma");
     } finally {
       setIsActionLoading(false);
     }
@@ -614,13 +654,19 @@ export default function AdminPage() {
 
   // Create single student
   const handleCreateAluno = async () => {
-    if (!alunoForm.nome || !alunoForm.matricula || !alunoForm.turma || !expandedSchoolId) return;
+    if (
+      !alunoForm.nome ||
+      !alunoForm.matricula ||
+      !alunoForm.turma ||
+      !expandedSchoolId
+    )
+      return;
 
     setIsActionLoading(true);
     try {
-      const response = await authFetch('/api/admin/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await authFetch("/api/admin/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome: alunoForm.nome,
           matricula: alunoForm.matricula,
@@ -634,18 +680,20 @@ export default function AdminPage() {
         fetchStudentsForSchool(expandedSchoolId, 1);
         fetchTurmasForSchool(expandedSchoolId);
         setShowAlunoModal(false);
-        setAlunoForm({ nome: '', matricula: '', turma: '' });
+        setAlunoForm({ nome: "", matricula: "", turma: "" });
 
         // Show password if new student was created
         if (data.senha) {
-          alert(`Aluno criado com sucesso!\n\nSenha: ${data.senha}\n\nAnote esta senha, ela não será exibida novamente.`);
+          alert(
+            `Aluno criado com sucesso!\n\nSenha: ${data.senha}\n\nAnote esta senha, ela não será exibida novamente.`,
+          );
         }
       } else {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao criar aluno:', error);
-      alert('Erro ao criar aluno');
+      console.error("Erro ao criar aluno:", error);
+      alert("Erro ao criar aluno");
     } finally {
       setIsActionLoading(false);
     }
@@ -655,13 +703,13 @@ export default function AdminPage() {
   const fetchCoordinators = useCallback(async () => {
     setIsLoadingCoordinators(true);
     try {
-      const response = await authFetch('/api/admin/coordinators');
+      const response = await authFetch("/api/admin/coordinators");
       const data = await response.json();
       if (data.success) {
         setCoordinators(data.coordinators);
       }
     } catch (error) {
-      console.error('Erro ao buscar coordenadores:', error);
+      console.error("Erro ao buscar coordenadores:", error);
     } finally {
       setIsLoadingCoordinators(false);
     }
@@ -671,13 +719,13 @@ export default function AdminPage() {
   const fetchAdminMessages = useCallback(async () => {
     setIsLoadingMessages(true);
     try {
-      const response = await authFetch('/api/admin/messages');
+      const response = await authFetch("/api/admin/messages");
       const data = await response.json();
       if (data.messages) {
         setAdminMessages(data.messages);
       }
     } catch (error) {
-      console.error('Erro ao buscar mensagens:', error);
+      console.error("Erro ao buscar mensagens:", error);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -686,32 +734,43 @@ export default function AdminPage() {
   // Send admin message
   const handleSendMessage = async () => {
     if (!messageForm.title.trim() || !messageForm.content.trim()) {
-      alert('Preencha título e conteúdo da mensagem');
+      alert("Preencha título e conteúdo da mensagem");
       return;
     }
 
     setIsSendingMessage(true);
     try {
-      const response = await authFetch('/api/admin/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await authFetch("/api/admin/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: messageForm.title,
           content: messageForm.content,
           target_type: messageForm.target_type,
-          filter_school_ids: messageForm.filter_school_ids.length > 0 ? messageForm.filter_school_ids : null,
-          filter_turmas: messageForm.filter_turmas.length > 0 ? messageForm.filter_turmas : null,
-          filter_series: messageForm.filter_series.length > 0 ? messageForm.filter_series : null,
+          filter_school_ids:
+            messageForm.filter_school_ids.length > 0
+              ? messageForm.filter_school_ids
+              : null,
+          filter_turmas:
+            messageForm.filter_turmas.length > 0
+              ? messageForm.filter_turmas
+              : null,
+          filter_series:
+            messageForm.filter_series.length > 0
+              ? messageForm.filter_series
+              : null,
         }),
       });
 
       const data = await response.json();
       if (data.success) {
-        alert(`Mensagem enviada para ${data.recipients_count} destinatário(s)!`);
+        alert(
+          `Mensagem enviada para ${data.recipients_count} destinatário(s)!`,
+        );
         setMessageForm({
-          title: '',
-          content: '',
-          target_type: 'students',
+          title: "",
+          content: "",
+          target_type: "students",
           filter_school_ids: [],
           filter_turmas: [],
           filter_series: [],
@@ -722,8 +781,8 @@ export default function AdminPage() {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      alert('Erro ao enviar mensagem');
+      console.error("Erro ao enviar mensagem:", error);
+      alert("Erro ao enviar mensagem");
     } finally {
       setIsSendingMessage(false);
     }
@@ -733,7 +792,7 @@ export default function AdminPage() {
   const handleDeleteMessage = async (messageId: string) => {
     try {
       const response = await authFetch(`/api/admin/messages/${messageId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
 
       const data = await response.json();
@@ -744,8 +803,8 @@ export default function AdminPage() {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao deletar mensagem:', error);
-      alert('Erro ao deletar mensagem');
+      console.error("Erro ao deletar mensagem:", error);
+      alert("Erro ao deletar mensagem");
     }
   };
 
@@ -753,28 +812,34 @@ export default function AdminPage() {
   const handleSaveCoordinator = async () => {
     setIsActionLoading(true);
     try {
-      const method = coordinatorToEdit ? 'PUT' : 'POST';
+      const method = coordinatorToEdit ? "PUT" : "POST";
       const url = coordinatorToEdit
         ? `/api/admin/coordinators/${coordinatorToEdit.id}`
-        : '/api/admin/coordinators';
+        : "/api/admin/coordinators";
 
       const body = coordinatorToEdit
         ? {
-          name: coordinatorForm.name,
-          school_id: coordinatorForm.school_id || null,
-          allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
-        }
+            name: coordinatorForm.name,
+            school_id: coordinatorForm.school_id || null,
+            allowed_series:
+              coordinatorForm.allowed_series.length > 0
+                ? coordinatorForm.allowed_series
+                : null,
+          }
         : {
-          email: coordinatorForm.email,
-          name: coordinatorForm.name,
-          password: coordinatorForm.password,
-          school_id: coordinatorForm.school_id,
-          allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
-        };
+            email: coordinatorForm.email,
+            name: coordinatorForm.name,
+            password: coordinatorForm.password,
+            school_id: coordinatorForm.school_id,
+            allowed_series:
+              coordinatorForm.allowed_series.length > 0
+                ? coordinatorForm.allowed_series
+                : null,
+          };
 
       const response = await authFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -783,13 +848,19 @@ export default function AdminPage() {
         fetchCoordinators();
         setShowCoordinatorModal(false);
         setCoordinatorToEdit(null);
-        setCoordinatorForm({ email: '', name: '', password: '', school_id: '', allowed_series: [] });
+        setCoordinatorForm({
+          email: "",
+          name: "",
+          password: "",
+          school_id: "",
+          allowed_series: [],
+        });
       } else {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao salvar coordenador:', error);
-      alert('Erro ao salvar coordenador');
+      console.error("Erro ao salvar coordenador:", error);
+      alert("Erro ao salvar coordenador");
     } finally {
       setIsActionLoading(false);
     }
@@ -800,7 +871,10 @@ export default function AdminPage() {
     if (!coordinatorToDelete) return;
     setIsActionLoading(true);
     try {
-      const response = await authFetch(`/api/admin/coordinators/${coordinatorToDelete.id}`, { method: 'DELETE' });
+      const response = await authFetch(
+        `/api/admin/coordinators/${coordinatorToDelete.id}`,
+        { method: "DELETE" },
+      );
       const data = await response.json();
       if (data.success) {
         fetchCoordinators();
@@ -808,8 +882,8 @@ export default function AdminPage() {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao excluir coordenador:', error);
-      alert('Erro ao excluir coordenador');
+      console.error("Erro ao excluir coordenador:", error);
+      alert("Erro ao excluir coordenador");
     } finally {
       setIsActionLoading(false);
       setCoordinatorToDelete(null);
@@ -821,22 +895,25 @@ export default function AdminPage() {
     if (!showResetPasswordModal || !newCoordinatorPassword) return;
     setIsActionLoading(true);
     try {
-      const response = await authFetch(`/api/admin/coordinators/${showResetPasswordModal.id}/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: newCoordinatorPassword }),
-      });
+      const response = await authFetch(
+        `/api/admin/coordinators/${showResetPasswordModal.id}/reset-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: newCoordinatorPassword }),
+        },
+      );
       const data = await response.json();
       if (data.success) {
         alert(`Senha alterada com sucesso para ${data.email}`);
         setShowResetPasswordModal(null);
-        setNewCoordinatorPassword('');
+        setNewCoordinatorPassword("");
       } else {
         alert(`Erro: ${data.error}`);
       }
     } catch (error) {
-      console.error('Erro ao resetar senha:', error);
-      alert('Erro ao resetar senha');
+      console.error("Erro ao resetar senha:", error);
+      alert("Erro ao resetar senha");
     } finally {
       setIsActionLoading(false);
     }
@@ -848,11 +925,14 @@ export default function AdminPage() {
     setIsResetAllLoading(true);
     setResetAllResults(null);
     try {
-      const response = await authFetch('/api/admin/students/reset-all-passwords', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schoolId: expandedSchoolId }),
-      });
+      const response = await authFetch(
+        "/api/admin/students/reset-all-passwords",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ schoolId: expandedSchoolId }),
+        },
+      );
       const data = await response.json();
       if (data.success || data.summary) {
         setResetAllResults(data.summary);
@@ -861,8 +941,8 @@ export default function AdminPage() {
         setShowResetAllModal(false);
       }
     } catch (error) {
-      console.error('Erro ao resetar senhas:', error);
-      alert('Erro ao resetar senhas');
+      console.error("Erro ao resetar senhas:", error);
+      alert("Erro ao resetar senhas");
       setShowResetAllModal(false);
     } finally {
       setIsResetAllLoading(false);
@@ -879,7 +959,7 @@ export default function AdminPage() {
       setStudents([]);
     } else {
       setExpandedSchoolId(schoolId);
-      setActiveSubTab('provas');
+      setActiveSubTab("provas");
       // Load data for this school
       fetchSimuladosForSchool(schoolId);
       fetchTurmasForSchool(schoolId);
@@ -889,7 +969,7 @@ export default function AdminPage() {
 
   // Load schools on mount
   useEffect(() => {
-    if (activeTab === 'escolas') {
+    if (activeTab === "escolas") {
       fetchSchools();
     }
   }, [activeTab, fetchSchools]);
@@ -905,7 +985,7 @@ export default function AdminPage() {
 
   // Debounced search for students
   useEffect(() => {
-    if (expandedSchoolId && activeSubTab === 'alunos') {
+    if (expandedSchoolId && activeSubTab === "alunos") {
       const timer = setTimeout(() => {
         fetchStudentsForSchool(expandedSchoolId, 1);
       }, 300);
@@ -915,14 +995,18 @@ export default function AdminPage() {
 
   // Refresh after import
   useEffect(() => {
-    if (showResultsModal === false && importResults?.success && expandedSchoolId) {
+    if (
+      showResultsModal === false &&
+      importResults?.success &&
+      expandedSchoolId
+    ) {
       fetchStudentsForSchool(expandedSchoolId, 1);
     }
   }, [showResultsModal]);
 
   // Load coordinators when tab changes
   useEffect(() => {
-    if (activeTab === 'coordenadores') {
+    if (activeTab === "coordenadores") {
       fetchCoordinators();
       fetchSchools();
     }
@@ -930,11 +1014,16 @@ export default function AdminPage() {
 
   // Fetch messages when tab is selected
   useEffect(() => {
-    if (activeTab === 'mensagens') {
+    if (activeTab === "mensagens") {
       fetchAdminMessages();
       fetchSchools(); // Para os filtros
     }
   }, [activeTab, fetchAdminMessages, fetchSchools]);
+
+  useEffect(() => {
+    if (coordinatorForm.school_id)
+      fetchTurmasForSchool(coordinatorForm.school_id);
+  }, [coordinatorForm.school_id]);
 
   const handleCsvDataReady = (data: StudentRow[]) => {
     setPendingStudents(data);
@@ -948,12 +1037,12 @@ export default function AdminPage() {
 
     try {
       const progressInterval = setInterval(() => {
-        setImportProgress(prev => Math.min(prev + 10, 90));
+        setImportProgress((prev) => Math.min(prev + 10, 90));
       }, 200);
 
-      const response = await authFetch('/api/admin/import-students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await authFetch("/api/admin/import-students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           students: pendingStudents,
           schoolId: expandedSchoolId,
@@ -973,15 +1062,27 @@ export default function AdminPage() {
         setPendingStudents([]);
       }
     } catch (error) {
-      console.error('Erro ao importar:', error);
+      console.error("Erro ao importar:", error);
       setImportResults({
         success: false,
-        summary: { total: pendingStudents.length, created: 0, updated: 0, errors: pendingStudents.length },
-        results: [{
-          matricula: 'N/A', nome: 'Erro', turma: 'N/A', email: 'N/A', senha: '',
-          status: 'error',
-          message: error instanceof Error ? error.message : 'Erro desconhecido'
-        }]
+        summary: {
+          total: pendingStudents.length,
+          created: 0,
+          updated: 0,
+          errors: pendingStudents.length,
+        },
+        results: [
+          {
+            matricula: "N/A",
+            nome: "Erro",
+            turma: "N/A",
+            email: "N/A",
+            senha: "",
+            status: "error",
+            message:
+              error instanceof Error ? error.message : "Erro desconhecido",
+          },
+        ],
       });
       setShowResultsModal(true);
     } finally {
@@ -994,40 +1095,54 @@ export default function AdminPage() {
     if (!importResults) return;
 
     const createdStudents = importResults.results.filter(
-      r => r.status === 'created' && r.senha && !r.senha.startsWith('(')
+      (r) => r.status === "created" && r.senha && !r.senha.startsWith("("),
     );
 
     if (createdStudents.length === 0) {
-      alert('Nenhum aluno novo foi criado com credenciais para baixar.');
+      alert("Nenhum aluno novo foi criado com credenciais para baixar.");
       return;
     }
 
-    const headers = ['Matrícula', 'Nome', 'Turma', 'Email', 'Senha'];
-    const rows = createdStudents.map(s => [s.matricula, s.nome, s.turma, s.email, s.senha]);
+    const headers = ["Matrícula", "Nome", "Turma", "Email", "Senha"];
+    const rows = createdStudents.map((s) => [
+      s.matricula,
+      s.nome,
+      s.turma,
+      s.email,
+      s.senha,
+    ]);
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+      headers.join(","),
+      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
+    ].join("\n");
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.download = `credenciais_alunos_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `credenciais_alunos_${new Date().toISOString().split("T")[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  const getStatusBadge = (status: ImportResult['status']) => {
+  const getStatusBadge = (status: ImportResult["status"]) => {
     switch (status) {
-      case 'created':
-        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Criado</Badge>;
-      case 'updated':
-        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Atualizado</Badge>;
-      case 'error':
+      case "created":
+        return (
+          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+            Criado
+          </Badge>
+        );
+      case "updated":
+        return (
+          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+            Atualizado
+          </Badge>
+        );
+      case "error":
         return <Badge variant="destructive">Erro</Badge>;
     }
   };
@@ -1037,11 +1152,18 @@ export default function AdminPage() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h4 className="font-medium">Provas/Simulados</h4>
-        <Button size="sm" onClick={() => {
-          setSimuladoToEdit(null);
-          setSimuladoForm({ title: '', school_id: school.id, total_questions: 90 });
-          setShowSimuladoModal(true);
-        }}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setSimuladoToEdit(null);
+            setSimuladoForm({
+              title: "",
+              school_id: school.id,
+              total_questions: 90,
+            });
+            setShowSimuladoModal(true);
+          }}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Nova Prova
         </Button>
@@ -1074,23 +1196,36 @@ export default function AdminPage() {
                   <TableCell>
                     <div>
                       <p className="font-medium">{simulado.title}</p>
-                      <p className="text-xs text-gray-500">{simulado.alunos_count || 0} alunos</p>
+                      <p className="text-xs text-gray-500">
+                        {simulado.alunos_count || 0} alunos
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">{simulado.total_questions}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge className={simulado.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                      {simulado.status === 'active' ? 'Ativo' : simulado.status}
+                    <Badge
+                      className={
+                        simulado.status === "active"
+                          ? "bg-green-100 text-green-800"
+                          : "bg-gray-100 text-gray-800"
+                      }
+                    >
+                      {simulado.status === "active" ? "Ativo" : simulado.status}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {new Date(simulado.created_at).toLocaleDateString('pt-BR')}
+                    {new Date(simulado.created_at).toLocaleDateString("pt-BR")}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEditSimulado(simulado)} title="Editar">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditSimulado(simulado)}
+                        title="Editar"
+                      >
                         <Edit2 className="h-4 w-4" />
                       </Button>
                       {isSuperAdmin && (
@@ -1120,14 +1255,21 @@ export default function AdminPage() {
       <div className="flex justify-between items-center">
         <h4 className="font-medium">Turmas</h4>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => fetchTurmasForSchool(school.id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchTurmasForSchool(school.id)}
+          >
             <RefreshCw className="h-4 w-4 mr-2" />
             Atualizar
           </Button>
-          <Button size="sm" onClick={() => {
-            setTurmaForm({ nome: '' });
-            setShowTurmaModal(true);
-          }}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setTurmaForm({ nome: "" });
+              setShowTurmaModal(true);
+            }}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Nova Turma
           </Button>
@@ -1153,7 +1295,8 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">{turma.nome}</CardTitle>
                     <Badge variant="secondary">
-                      {turma.alunosCount} aluno{turma.alunosCount !== 1 ? 's' : ''}
+                      {turma.alunosCount} aluno
+                      {turma.alunosCount !== 1 ? "s" : ""}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -1163,9 +1306,13 @@ export default function AdminPage() {
                       variant="outline"
                       size="sm"
                       className="flex-1"
-                      onClick={() => setSelectedTurmaForPrint(
-                        selectedTurmaForPrint === turma.nome ? null : turma.nome
-                      )}
+                      onClick={() =>
+                        setSelectedTurmaForPrint(
+                          selectedTurmaForPrint === turma.nome
+                            ? null
+                            : turma.nome,
+                        )
+                      }
                     >
                       <Users className="h-4 w-4 mr-1" />
                       Ver
@@ -1192,10 +1339,18 @@ export default function AdminPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleGenerateGabaritos(turma.nome, school.id, 1)}>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            handleGenerateGabaritos(turma.nome, school.id, 1)
+                          }
+                        >
                           Dia 1 (Questões 1-90)
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleGenerateGabaritos(turma.nome, school.id, 2)}>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            handleGenerateGabaritos(turma.nome, school.id, 2)
+                          }
+                        >
                           Dia 2 (Questões 91-180)
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -1212,12 +1367,18 @@ export default function AdminPage() {
               <CardHeader className="py-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-base">Alunos - {selectedTurmaForPrint}</CardTitle>
+                    <CardTitle className="text-base">
+                      Alunos - {selectedTurmaForPrint}
+                    </CardTitle>
                     <CardDescription className="text-sm">
                       {turmaAlunos.length} aluno(s)
                     </CardDescription>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => setSelectedTurmaForPrint(null)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedTurmaForPrint(null)}
+                  >
                     <XCircle className="h-4 w-4" />
                   </Button>
                 </div>
@@ -1240,9 +1401,13 @@ export default function AdminPage() {
                       <TableBody>
                         {turmaAlunos.map((aluno) => (
                           <TableRow key={aluno.id}>
-                            <TableCell className="font-mono text-sm">{aluno.student_number || '-'}</TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {aluno.student_number || "-"}
+                            </TableCell>
                             <TableCell>{aluno.name}</TableCell>
-                            <TableCell className="text-sm text-gray-500">{aluno.email}</TableCell>
+                            <TableCell className="text-sm text-gray-500">
+                              {aluno.email}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -1274,10 +1439,13 @@ export default function AdminPage() {
             <KeyRound className="h-4 w-4 mr-2" />
             Ativar Todos
           </Button>
-          <Button size="sm" onClick={() => {
-            setAlunoForm({ nome: '', matricula: '', turma: '' });
-            setShowAlunoModal(true);
-          }}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setAlunoForm({ nome: "", matricula: "", turma: "" });
+              setShowAlunoModal(true);
+            }}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Novo Aluno
           </Button>
@@ -1301,7 +1469,9 @@ export default function AdminPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-sm">Importando {pendingStudents.length} aluno(s)...</span>
+                    <span className="text-sm">
+                      Importando {pendingStudents.length} aluno(s)...
+                    </span>
                   </div>
                   <Progress value={importProgress} className="h-2" />
                 </div>
@@ -1335,7 +1505,9 @@ export default function AdminPage() {
             <SelectContent>
               <SelectItem value="all">Todas turmas</SelectItem>
               {turmas.map((turma) => (
-                <SelectItem key={turma} value={turma}>{turma}</SelectItem>
+                <SelectItem key={turma} value={turma}>
+                  {turma}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1366,15 +1538,24 @@ export default function AdminPage() {
                 <TableBody>
                   {students.map((student) => (
                     <TableRow key={student.id}>
-                      <TableCell className="font-mono text-sm">{student.student_number || '-'}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {student.student_number || "-"}
+                      </TableCell>
                       <TableCell>{student.name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{student.turma || '-'}</Badge>
+                        <Badge variant="outline">{student.turma || "-"}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-gray-500">{student.email}</TableCell>
+                      <TableCell className="text-sm text-gray-500">
+                        {student.email}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setStudentToResetPassword(student)} title="Resetar senha">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setStudentToResetPassword(student)}
+                            title="Resetar senha"
+                          >
                             <KeyRound className="h-4 w-4" />
                           </Button>
                           {isSuperAdmin && (
@@ -1406,7 +1587,9 @@ export default function AdminPage() {
                     variant="outline"
                     size="sm"
                     disabled={pagination.page === 1}
-                    onClick={() => fetchStudentsForSchool(school.id, pagination.page - 1)}
+                    onClick={() =>
+                      fetchStudentsForSchool(school.id, pagination.page - 1)
+                    }
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
@@ -1414,7 +1597,9 @@ export default function AdminPage() {
                     variant="outline"
                     size="sm"
                     disabled={pagination.page === pagination.totalPages}
-                    onClick={() => fetchStudentsForSchool(school.id, pagination.page + 1)}
+                    onClick={() =>
+                      fetchStudentsForSchool(school.id, pagination.page + 1)
+                    }
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -1457,13 +1642,20 @@ export default function AdminPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
           <TabsList className="grid w-full grid-cols-4 max-w-lg">
             <TabsTrigger value="escolas" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Escolas
             </TabsTrigger>
-            <TabsTrigger value="coordenadores" className="flex items-center gap-2">
+            <TabsTrigger
+              value="coordenadores"
+              className="flex items-center gap-2"
+            >
               <Users className="h-4 w-4" />
               Coordenadores
             </TabsTrigger>
@@ -1471,7 +1663,10 @@ export default function AdminPage() {
               <Mail className="h-4 w-4" />
               Mensagens
             </TabsTrigger>
-            <TabsTrigger value="configuracoes" className="flex items-center gap-2">
+            <TabsTrigger
+              value="configuracoes"
+              className="flex items-center gap-2"
+            >
               <Settings className="h-4 w-4" />
               Config
             </TabsTrigger>
@@ -1484,7 +1679,8 @@ export default function AdminPage() {
                   <div>
                     <CardTitle>Gestão de Escolas</CardTitle>
                     <CardDescription>
-                      {schools.length} escola(s) cadastrada(s) - Clique para expandir
+                      {schools.length} escola(s) cadastrada(s) - Clique para
+                      expandir
                     </CardDescription>
                   </div>
                   <div className="flex gap-2">
@@ -1493,11 +1689,14 @@ export default function AdminPage() {
                       Atualizar
                     </Button>
                     {isSuperAdmin && (
-                      <Button size="sm" onClick={() => {
-                        setSchoolToEdit(null);
-                        setSchoolForm({ name: '', slug: '' });
-                        setShowSchoolModal(true);
-                      }}>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setSchoolToEdit(null);
+                          setSchoolForm({ name: "", slug: "" });
+                          setShowSchoolModal(true);
+                        }}
+                      >
                         <Plus className="h-4 w-4 mr-2" />
                         Nova Escola
                       </Button>
@@ -1514,7 +1713,11 @@ export default function AdminPage() {
                   <div className="text-center py-12 text-gray-500">
                     <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhuma escola cadastrada</p>
-                    {isSuperAdmin && <p className="text-sm mt-2">Clique em "Nova Escola" para adicionar</p>}
+                    {isSuperAdmin && (
+                      <p className="text-sm mt-2">
+                        Clique em "Nova Escola" para adicionar
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1535,13 +1738,23 @@ export default function AdminPage() {
                                 )}
                                 <div>
                                   <p className="font-medium">{school.name}</p>
-                                  <p className="text-sm text-gray-500">{school.slug}</p>
+                                  <p className="text-sm text-gray-500">
+                                    {school.slug}
+                                  </p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <div
+                                className="flex items-center gap-2"
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 {isSuperAdmin && (
                                   <>
-                                    <Button variant="ghost" size="sm" onClick={() => openEditSchool(school)} title="Editar">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openEditSchool(school)}
+                                      title="Editar"
+                                    >
                                       <Edit2 className="h-4 w-4" />
                                     </Button>
                                     <Button
@@ -1562,17 +1775,33 @@ export default function AdminPage() {
                           <CollapsibleContent>
                             <div className="border-t bg-gray-50/50 dark:bg-gray-800/50 p-4">
                               {/* Sub-tabs */}
-                              <Tabs value={activeSubTab} onValueChange={(v) => setActiveSubTab(v as 'provas' | 'turmas' | 'alunos')}>
+                              <Tabs
+                                value={activeSubTab}
+                                onValueChange={(v) =>
+                                  setActiveSubTab(
+                                    v as "provas" | "turmas" | "alunos",
+                                  )
+                                }
+                              >
                                 <TabsList className="grid w-full grid-cols-3 max-w-md mb-4">
-                                  <TabsTrigger value="provas" className="flex items-center gap-2">
+                                  <TabsTrigger
+                                    value="provas"
+                                    className="flex items-center gap-2"
+                                  >
                                     <ClipboardList className="h-4 w-4" />
                                     Provas
                                   </TabsTrigger>
-                                  <TabsTrigger value="turmas" className="flex items-center gap-2">
+                                  <TabsTrigger
+                                    value="turmas"
+                                    className="flex items-center gap-2"
+                                  >
                                     <GraduationCap className="h-4 w-4" />
                                     Turmas
                                   </TabsTrigger>
-                                  <TabsTrigger value="alunos" className="flex items-center gap-2">
+                                  <TabsTrigger
+                                    value="alunos"
+                                    className="flex items-center gap-2"
+                                  >
                                     <Users className="h-4 w-4" />
                                     Alunos
                                   </TabsTrigger>
@@ -1612,15 +1841,28 @@ export default function AdminPage() {
                     </CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={fetchCoordinators}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchCoordinators}
+                    >
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Atualizar
                     </Button>
-                    <Button size="sm" onClick={() => {
-                      setCoordinatorToEdit(null);
-                      setCoordinatorForm({ email: '', name: '', password: '', school_id: '', allowed_series: [] });
-                      setShowCoordinatorModal(true);
-                    }}>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setCoordinatorToEdit(null);
+                        setCoordinatorForm({
+                          email: "",
+                          name: "",
+                          password: "",
+                          school_id: "",
+                          allowed_series: [],
+                        });
+                        setShowCoordinatorModal(true);
+                      }}
+                    >
                       <Plus className="h-4 w-4 mr-2" />
                       Novo Coordenador
                     </Button>
@@ -1636,7 +1878,9 @@ export default function AdminPage() {
                   <div className="text-center py-12 text-gray-500">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhum coordenador cadastrado</p>
-                    <p className="text-sm mt-2">Clique em "Novo Coordenador" para adicionar</p>
+                    <p className="text-sm mt-2">
+                      Clique em "Novo Coordenador" para adicionar
+                    </p>
                   </div>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
@@ -1653,41 +1897,75 @@ export default function AdminPage() {
                       <TableBody>
                         {coordinators.map((coord) => (
                           <TableRow key={coord.id}>
-                            <TableCell className="font-medium">{coord.name}</TableCell>
-                            <TableCell className="text-sm">{coord.email}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{coord.schools?.name || 'Sem escola'}</Badge>
+                            <TableCell className="font-medium">
+                              {coord.name}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {coord.email}
                             </TableCell>
                             <TableCell>
-                              {coord.allowed_series && coord.allowed_series.length > 0 ? (
+                              <Badge variant="outline">
+                                {coord.schools?.name || "Sem escola"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {coord.allowed_series &&
+                              coord.allowed_series.length > 0 ? (
                                 <div className="flex gap-1">
-                                  {coord.allowed_series.map(s => (
-                                    <Badge key={s} variant="secondary" className="text-xs">{s}a</Badge>
+                                  {coord.allowed_series.map((s) => (
+                                    <Badge
+                                      key={s}
+                                      variant="secondary"
+                                      className="text-xs"
+                                    >
+                                      {s}a
+                                    </Badge>
                                   ))}
                                 </div>
                               ) : (
-                                <Badge className="bg-green-100 text-green-800">Total</Badge>
+                                <Badge className="bg-green-100 text-green-800">
+                                  Total
+                                </Badge>
                               )}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
-                                <Button variant="ghost" size="sm" onClick={() => {
-                                  setCoordinatorToEdit(coord);
-                                  setCoordinatorForm({
-                                    email: coord.email,
-                                    name: coord.name,
-                                    password: '',
-                                    school_id: coord.school_id || '',
-                                    allowed_series: coord.allowed_series || []
-                                  });
-                                  setShowCoordinatorModal(true);
-                                }} title="Editar">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setCoordinatorToEdit(coord);
+                                    setCoordinatorForm({
+                                      email: coord.email,
+                                      name: coord.name,
+                                      password: "",
+                                      school_id: coord.school_id || "",
+                                      allowed_series:
+                                        coord.allowed_series || [],
+                                    });
+                                    setShowCoordinatorModal(true);
+                                  }}
+                                  title="Editar"
+                                >
                                   <Edit2 className="h-4 w-4" />
                                 </Button>
-                                <Button variant="ghost" size="sm" onClick={() => setShowResetPasswordModal(coord)} title="Resetar senha">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setShowResetPasswordModal(coord)
+                                  }
+                                  title="Resetar senha"
+                                >
                                   <KeyRound className="h-4 w-4" />
                                 </Button>
-                                <Button variant="ghost" size="sm" onClick={() => setCoordinatorToDelete(coord)} className="text-red-600 hover:text-red-700 hover:bg-red-50" title="Excluir">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setCoordinatorToDelete(coord)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  title="Excluir"
+                                >
                                   <TrashIcon size={16} dangerHover />
                                 </Button>
                               </div>
@@ -1722,8 +2000,11 @@ export default function AdminPage() {
                     <Label>Destinatários</Label>
                     <Select
                       value={messageForm.target_type}
-                      onValueChange={(value: 'students' | 'schools') =>
-                        setMessageForm(prev => ({ ...prev, target_type: value }))
+                      onValueChange={(value: "students" | "schools") =>
+                        setMessageForm((prev) => ({
+                          ...prev,
+                          target_type: value,
+                        }))
                       }
                     >
                       <SelectTrigger>
@@ -1751,23 +2032,35 @@ export default function AdminPage() {
                     <Label>Filtrar por Escolas (opcional)</Label>
                     <div className="border rounded-md p-3 max-h-32 overflow-y-auto space-y-2">
                       {schools.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">Carregando escolas...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Carregando escolas...
+                        </p>
                       ) : (
-                        schools.map(school => (
-                          <div key={school.id} className="flex items-center gap-2">
+                        schools.map((school) => (
+                          <div
+                            key={school.id}
+                            className="flex items-center gap-2"
+                          >
                             <Checkbox
                               id={`school-${school.id}`}
-                              checked={messageForm.filter_school_ids.includes(school.id)}
+                              checked={messageForm.filter_school_ids.includes(
+                                school.id,
+                              )}
                               onCheckedChange={(checked) => {
-                                setMessageForm(prev => ({
+                                setMessageForm((prev) => ({
                                   ...prev,
                                   filter_school_ids: checked
                                     ? [...prev.filter_school_ids, school.id]
-                                    : prev.filter_school_ids.filter(id => id !== school.id)
+                                    : prev.filter_school_ids.filter(
+                                        (id) => id !== school.id,
+                                      ),
                                 }));
                               }}
                             />
-                            <label htmlFor={`school-${school.id}`} className="text-sm cursor-pointer">
+                            <label
+                              htmlFor={`school-${school.id}`}
+                              className="text-sm cursor-pointer"
+                            >
                               {school.name}
                             </label>
                           </div>
@@ -1775,30 +2068,39 @@ export default function AdminPage() {
                       )}
                     </div>
                     {messageForm.filter_school_ids.length === 0 && (
-                      <p className="text-xs text-muted-foreground">Nenhuma selecionada = todas as escolas</p>
+                      <p className="text-xs text-muted-foreground">
+                        Nenhuma selecionada = todas as escolas
+                      </p>
                     )}
                   </div>
 
                   {/* Filtro de Séries (apenas para alunos) */}
-                  {messageForm.target_type === 'students' && (
+                  {messageForm.target_type === "students" && (
                     <div className="space-y-2">
                       <Label>Filtrar por Série (opcional)</Label>
                       <div className="flex flex-wrap gap-2">
-                        {['1', '2', '3'].map(serie => (
+                        {["1", "2", "3"].map((serie) => (
                           <div key={serie} className="flex items-center gap-1">
                             <Checkbox
                               id={`serie-${serie}`}
-                              checked={messageForm.filter_series.includes(serie)}
+                              checked={messageForm.filter_series.includes(
+                                serie,
+                              )}
                               onCheckedChange={(checked) => {
-                                setMessageForm(prev => ({
+                                setMessageForm((prev) => ({
                                   ...prev,
                                   filter_series: checked
                                     ? [...prev.filter_series, serie]
-                                    : prev.filter_series.filter(s => s !== serie)
+                                    : prev.filter_series.filter(
+                                        (s) => s !== serie,
+                                      ),
                                 }));
                               }}
                             />
-                            <label htmlFor={`serie-${serie}`} className="text-sm cursor-pointer">
+                            <label
+                              htmlFor={`serie-${serie}`}
+                              className="text-sm cursor-pointer"
+                            >
                               {serie}º Ano
                             </label>
                           </div>
@@ -1814,13 +2116,20 @@ export default function AdminPage() {
                       id="message-title"
                       placeholder="Ex: Aviso importante sobre o simulado"
                       value={messageForm.title}
-                      onChange={(e) => setMessageForm(prev => ({ ...prev, title: e.target.value }))}
+                      onChange={(e) =>
+                        setMessageForm((prev) => ({
+                          ...prev,
+                          title: e.target.value,
+                        }))
+                      }
                     />
                   </div>
 
                   {/* Conteúdo */}
                   <div className="space-y-2">
-                    <Label htmlFor="message-content">Conteúdo * (suporta Markdown)</Label>
+                    <Label htmlFor="message-content">
+                      Conteúdo * (suporta Markdown)
+                    </Label>
                     <Textarea
                       id="message-content"
                       placeholder="Digite sua mensagem aqui...
@@ -1830,7 +2139,12 @@ Você pode usar:
 - listas
 - com itens"
                       value={messageForm.content}
-                      onChange={(e) => setMessageForm(prev => ({ ...prev, content: e.target.value }))}
+                      onChange={(e) =>
+                        setMessageForm((prev) => ({
+                          ...prev,
+                          content: e.target.value,
+                        }))
+                      }
                       rows={6}
                     />
                   </div>
@@ -1846,7 +2160,11 @@ Você pode usar:
                     </Button>
                     <Button
                       onClick={handleSendMessage}
-                      disabled={isSendingMessage || !messageForm.title || !messageForm.content}
+                      disabled={
+                        isSendingMessage ||
+                        !messageForm.title ||
+                        !messageForm.content
+                      }
                     >
                       {isSendingMessage ? (
                         <>
@@ -1877,8 +2195,15 @@ Você pode usar:
                         Mensagens expiram automaticamente após 7 dias
                       </CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={fetchAdminMessages} disabled={isLoadingMessages}>
-                      <RefreshCw className={`h-4 w-4 ${isLoadingMessages ? 'animate-spin' : ''}`} />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchAdminMessages}
+                      disabled={isLoadingMessages}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${isLoadingMessages ? "animate-spin" : ""}`}
+                      />
                     </Button>
                   </div>
                 </CardHeader>
@@ -1895,20 +2220,25 @@ Você pode usar:
                   ) : (
                     <ScrollArea className="h-[400px]">
                       <div className="space-y-3">
-                        {adminMessages.map(message => (
+                        {adminMessages.map((message) => (
                           <div
                             key={message.id}
                             className="border rounded-lg p-3 space-y-2 hover:bg-muted/50 transition-colors"
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-medium text-sm truncate">{message.title}</h4>
+                                <h4 className="font-medium text-sm truncate">
+                                  {message.title}
+                                </h4>
                                 <div className="flex items-center gap-2 mt-1">
                                   <Badge variant="outline" className="text-xs">
-                                    {message.target_type === 'students' ? 'Alunos' : 'Escolas'}
+                                    {message.target_type === "students"
+                                      ? "Alunos"
+                                      : "Escolas"}
                                   </Badge>
                                   <span className="text-xs text-muted-foreground">
-                                    {message.recipients_count || 0} destinatário(s)
+                                    {message.recipients_count || 0}{" "}
+                                    destinatário(s)
                                   </span>
                                 </div>
                               </div>
@@ -1922,14 +2252,23 @@ Você pode usar:
                               </Button>
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-2">
-                              {message.content.replace(/[#*_`]/g, '').substring(0, 100)}...
+                              {message.content
+                                .replace(/[#*_`]/g, "")
+                                .substring(0, 100)}
+                              ...
                             </p>
                             <div className="flex items-center gap-4 text-xs text-muted-foreground">
                               <span>
-                                Enviada: {new Date(message.created_at).toLocaleDateString('pt-BR')}
+                                Enviada:{" "}
+                                {new Date(
+                                  message.created_at,
+                                ).toLocaleDateString("pt-BR")}
                               </span>
                               <span>
-                                Expira: {new Date(message.expires_at).toLocaleDateString('pt-BR')}
+                                Expira:{" "}
+                                {new Date(
+                                  message.expires_at,
+                                ).toLocaleDateString("pt-BR")}
                               </span>
                             </div>
                           </div>
@@ -1956,30 +2295,54 @@ Você pode usar:
               <CardContent className="space-y-6">
                 {/* Instruções */}
                 <div>
-                  <h3 className="text-sm font-medium mb-4">Como usar o sistema</h3>
+                  <h3 className="text-sm font-medium mb-4">
+                    Como usar o sistema
+                  </h3>
                   <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
                     <div className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">1</span>
-                      <p><strong>Selecione uma escola:</strong> Clique na escola para expandir e ver suas opções</p>
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
+                        1
+                      </span>
+                      <p>
+                        <strong>Selecione uma escola:</strong> Clique na escola
+                        para expandir e ver suas opções
+                      </p>
                     </div>
                     <div className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">2</span>
-                      <p><strong>Importe alunos:</strong> Na aba "Alunos", faça upload de CSV com nome, turma e matrícula</p>
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
+                        2
+                      </span>
+                      <p>
+                        <strong>Importe alunos:</strong> Na aba "Alunos", faça
+                        upload de CSV com nome, turma e matrícula
+                      </p>
                     </div>
                     <div className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">3</span>
-                      <p><strong>Imprima gabaritos:</strong> Na aba "Turmas", clique em "Gabaritos" para gerar PDFs</p>
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
+                        3
+                      </span>
+                      <p>
+                        <strong>Imprima gabaritos:</strong> Na aba "Turmas",
+                        clique em "Gabaritos" para gerar PDFs
+                      </p>
                     </div>
                     <div className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">4</span>
-                      <p><strong>Crie provas:</strong> Na aba "Provas", cadastre simulados e gerencie resultados</p>
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
+                        4
+                      </span>
+                      <p>
+                        <strong>Crie provas:</strong> Na aba "Provas", cadastre
+                        simulados e gerencie resultados
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 {/* Formato CSV */}
                 <div className="border-t pt-6">
-                  <h3 className="text-sm font-medium mb-4">Formato do CSV para importação</h3>
+                  <h3 className="text-sm font-medium mb-4">
+                    Formato do CSV para importação
+                  </h3>
                   <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
                     <p className="text-green-400"># Exemplo de arquivo CSV</p>
                     <p>NOME,TURMA,MATRICULA</p>
@@ -2043,16 +2406,29 @@ Você pode usar:
               </TableHeader>
               <TableBody>
                 {importResults?.results.map((result, idx) => (
-                  <TableRow key={idx} className={result.status === 'error' ? 'bg-red-50 dark:bg-red-950' : ''}>
-                    <TableCell className="font-mono">{result.matricula}</TableCell>
+                  <TableRow
+                    key={idx}
+                    className={
+                      result.status === "error"
+                        ? "bg-red-50 dark:bg-red-950"
+                        : ""
+                    }
+                  >
+                    <TableCell className="font-mono">
+                      {result.matricula}
+                    </TableCell>
                     <TableCell>{result.nome}</TableCell>
                     <TableCell>{result.turma}</TableCell>
                     <TableCell className="text-sm">{result.email}</TableCell>
-                    <TableCell className="font-mono text-sm">{result.senha || '-'}</TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {result.senha || "-"}
+                    </TableCell>
                     <TableCell>
                       {getStatusBadge(result.status)}
-                      {result.status === 'error' && result.message && (
-                        <p className="text-xs text-red-600 mt-1">{result.message}</p>
+                      {result.status === "error" && result.message && (
+                        <p className="text-xs text-red-600 mt-1">
+                          {result.message}
+                        </p>
                       )}
                     </TableCell>
                   </TableRow>
@@ -2063,10 +2439,14 @@ Você pode usar:
 
           <div className="flex justify-between items-center mt-4 pt-4 border-t">
             <p className="text-sm text-gray-500">
-              As senhas são exibidas apenas uma vez. Baixe o arquivo para guardar.
+              As senhas são exibidas apenas uma vez. Baixe o arquivo para
+              guardar.
             </p>
             <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setShowResultsModal(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setShowResultsModal(false)}
+              >
                 Fechar
               </Button>
               <Button onClick={downloadCredentialsCsv} className="gap-2">
@@ -2095,18 +2475,18 @@ Você pode usar:
               Resetar Senha
             </DialogTitle>
             <DialogDescription>
-              {newPassword ? (
-                'Nova senha gerada com sucesso!'
-              ) : (
-                `Gerar nova senha para ${studentToResetPassword?.name}?`
-              )}
+              {newPassword
+                ? "Nova senha gerada com sucesso!"
+                : `Gerar nova senha para ${studentToResetPassword?.name}?`}
             </DialogDescription>
           </DialogHeader>
 
           {newPassword ? (
             <div className="space-y-4">
               <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Nova senha:</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  Nova senha:
+                </p>
                 <p className="text-2xl font-mono font-bold text-green-700 dark:text-green-300">
                   {newPassword}
                 </p>
@@ -2126,11 +2506,16 @@ Você pode usar:
             </div>
           ) : (
             <div className="flex justify-end gap-3 mt-4">
-              <Button variant="outline" onClick={() => setStudentToResetPassword(null)}>
+              <Button
+                variant="outline"
+                onClick={() => setStudentToResetPassword(null)}
+              >
                 Cancelar
               </Button>
               <Button onClick={handleResetPassword} disabled={isActionLoading}>
-                {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isActionLoading && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
                 Gerar Nova Senha
               </Button>
             </div>
@@ -2139,12 +2524,16 @@ Você pode usar:
       </Dialog>
 
       {/* AlertDialog Confirmar Exclusão de Aluno */}
-      <AlertDialog open={!!studentToDelete} onOpenChange={(open) => !open && setStudentToDelete(null)}>
+      <AlertDialog
+        open={!!studentToDelete}
+        onOpenChange={(open) => !open && setStudentToDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remover Aluno</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja remover <strong>{studentToDelete?.name}</strong>?
+              Tem certeza que deseja remover{" "}
+              <strong>{studentToDelete?.name}</strong>?
               <br />
               Esta ação não pode ser desfeita.
             </AlertDialogDescription>
@@ -2156,7 +2545,9 @@ Você pode usar:
               className="bg-red-600 hover:bg-red-700"
               disabled={isActionLoading}
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Remover
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2170,7 +2561,7 @@ Você pode usar:
           if (!open) {
             setShowSchoolModal(false);
             setSchoolToEdit(null);
-            setSchoolForm({ name: '', slug: '' });
+            setSchoolForm({ name: "", slug: "" });
           }
         }}
       >
@@ -2178,10 +2569,12 @@ Você pode usar:
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              {schoolToEdit ? 'Editar Escola' : 'Nova Escola'}
+              {schoolToEdit ? "Editar Escola" : "Nova Escola"}
             </DialogTitle>
             <DialogDescription>
-              {schoolToEdit ? 'Atualize os dados da escola' : 'Preencha os dados da nova escola'}
+              {schoolToEdit
+                ? "Atualize os dados da escola"
+                : "Preencha os dados da nova escola"}
             </DialogDescription>
           </DialogHeader>
 
@@ -2190,23 +2583,33 @@ Você pode usar:
               <label className="text-sm font-medium">Nome da Escola *</label>
               <Input
                 value={schoolForm.name}
-                onChange={(e) => setSchoolForm({ ...schoolForm, name: e.target.value })}
+                onChange={(e) =>
+                  setSchoolForm({ ...schoolForm, name: e.target.value })
+                }
                 placeholder="Ex: Colégio São Paulo"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Slug (identificador) *</label>
+              <label className="text-sm font-medium">
+                Slug (identificador) *
+              </label>
               <Input
                 value={schoolForm.slug}
-                onChange={(e) => setSchoolForm({
-                  ...schoolForm,
-                  slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
-                })}
+                onChange={(e) =>
+                  setSchoolForm({
+                    ...schoolForm,
+                    slug: e.target.value
+                      .toLowerCase()
+                      .replace(/[^a-z0-9-]/g, ""),
+                  })
+                }
                 placeholder="Ex: colegio-sp"
                 className="font-mono"
               />
-              <p className="text-xs text-gray-500">Apenas letras minúsculas, números e hífens.</p>
+              <p className="text-xs text-gray-500">
+                Apenas letras minúsculas, números e hífens.
+              </p>
             </div>
           </div>
 
@@ -2218,8 +2621,10 @@ Você pode usar:
               onClick={handleSaveSchool}
               disabled={isActionLoading || !schoolForm.name || !schoolForm.slug}
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {schoolToEdit ? 'Salvar' : 'Criar Escola'}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {schoolToEdit ? "Salvar" : "Criar Escola"}
             </Button>
           </div>
         </DialogContent>
@@ -2232,7 +2637,7 @@ Você pode usar:
           if (!open) {
             setShowSimuladoModal(false);
             setSimuladoToEdit(null);
-            setSimuladoForm({ title: '', school_id: '', total_questions: 90 });
+            setSimuladoForm({ title: "", school_id: "", total_questions: 90 });
           }
         }}
       >
@@ -2240,10 +2645,12 @@ Você pode usar:
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
-              {simuladoToEdit ? 'Editar Prova' : 'Nova Prova'}
+              {simuladoToEdit ? "Editar Prova" : "Nova Prova"}
             </DialogTitle>
             <DialogDescription>
-              {simuladoToEdit ? 'Atualize os dados da prova' : 'Configure a nova prova'}
+              {simuladoToEdit
+                ? "Atualize os dados da prova"
+                : "Configure a nova prova"}
             </DialogDescription>
           </DialogHeader>
 
@@ -2252,7 +2659,9 @@ Você pode usar:
               <label className="text-sm font-medium">Título da Prova *</label>
               <Input
                 value={simuladoForm.title}
-                onChange={(e) => setSimuladoForm({ ...simuladoForm, title: e.target.value })}
+                onChange={(e) =>
+                  setSimuladoForm({ ...simuladoForm, title: e.target.value })
+                }
                 placeholder="Ex: Simulado ENEM 2026 - 1º Bimestre"
               />
             </div>
@@ -2262,10 +2671,12 @@ Você pode usar:
               <Input
                 type="number"
                 value={simuladoForm.total_questions}
-                onChange={(e) => setSimuladoForm({
-                  ...simuladoForm,
-                  total_questions: parseInt(e.target.value) || 90
-                })}
+                onChange={(e) =>
+                  setSimuladoForm({
+                    ...simuladoForm,
+                    total_questions: parseInt(e.target.value) || 90,
+                  })
+                }
                 min={1}
                 max={200}
               />
@@ -2273,30 +2684,40 @@ Você pode usar:
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setShowSimuladoModal(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowSimuladoModal(false)}
+            >
               Cancelar
             </Button>
             <Button
               onClick={handleSaveSimulado}
               disabled={isActionLoading || !simuladoForm.title}
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {simuladoToEdit ? 'Salvar' : 'Criar Prova'}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {simuladoToEdit ? "Salvar" : "Criar Prova"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* AlertDialog Confirmar Exclusão de Escola */}
-      <AlertDialog open={!!schoolToDelete} onOpenChange={(open) => !open && setSchoolToDelete(null)}>
+      <AlertDialog
+        open={!!schoolToDelete}
+        onOpenChange={(open) => !open && setSchoolToDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Escola</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir a escola <strong>{schoolToDelete?.name}</strong>?
+              Tem certeza que deseja excluir a escola{" "}
+              <strong>{schoolToDelete?.name}</strong>?
               <br />
               <span className="text-red-600 font-medium">
-                Esta ação não pode ser desfeita. Todos os dados vinculados serão perdidos.
+                Esta ação não pode ser desfeita. Todos os dados vinculados serão
+                perdidos.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2307,7 +2728,9 @@ Você pode usar:
               className="bg-red-600 hover:bg-red-700"
               disabled={isActionLoading}
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2315,15 +2738,20 @@ Você pode usar:
       </AlertDialog>
 
       {/* AlertDialog Confirmar Exclusão de Simulado */}
-      <AlertDialog open={!!simuladoToDelete} onOpenChange={(open) => !open && setSimuladoToDelete(null)}>
+      <AlertDialog
+        open={!!simuladoToDelete}
+        onOpenChange={(open) => !open && setSimuladoToDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Prova</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir a prova <strong>{simuladoToDelete?.title}</strong>?
+              Tem certeza que deseja excluir a prova{" "}
+              <strong>{simuladoToDelete?.title}</strong>?
               <br />
               <span className="text-red-600 font-medium">
-                Esta ação não pode ser desfeita. Todas as respostas serão perdidas.
+                Esta ação não pode ser desfeita. Todas as respostas serão
+                perdidas.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2334,7 +2762,9 @@ Você pode usar:
               className="bg-red-600 hover:bg-red-700"
               disabled={isActionLoading}
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2347,7 +2777,7 @@ Você pode usar:
         onOpenChange={(open) => {
           if (!open) {
             setShowTurmaModal(false);
-            setTurmaForm({ nome: '' });
+            setTurmaForm({ nome: "" });
           }
         }}
       >
@@ -2367,10 +2797,14 @@ Você pode usar:
               <label className="text-sm font-medium">Nome da Turma *</label>
               <Input
                 value={turmaForm.nome}
-                onChange={(e) => setTurmaForm({ ...turmaForm, nome: e.target.value })}
+                onChange={(e) =>
+                  setTurmaForm({ ...turmaForm, nome: e.target.value })
+                }
                 placeholder="Ex: 1ª Série A"
               />
-              <p className="text-xs text-gray-500">Use o formato: Série + Letra (ex: 1ª Série A, 2ª Série B)</p>
+              <p className="text-xs text-gray-500">
+                Use o formato: Série + Letra (ex: 1ª Série A, 2ª Série B)
+              </p>
             </div>
           </div>
 
@@ -2382,7 +2816,9 @@ Você pode usar:
               onClick={handleCreateTurma}
               disabled={isActionLoading || !turmaForm.nome}
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Criar Turma
             </Button>
           </div>
@@ -2395,7 +2831,7 @@ Você pode usar:
         onOpenChange={(open) => {
           if (!open) {
             setShowAlunoModal(false);
-            setAlunoForm({ nome: '', matricula: '', turma: '' });
+            setAlunoForm({ nome: "", matricula: "", turma: "" });
           }
         }}
       >
@@ -2415,7 +2851,9 @@ Você pode usar:
               <label className="text-sm font-medium">Nome Completo *</label>
               <Input
                 value={alunoForm.nome}
-                onChange={(e) => setAlunoForm({ ...alunoForm, nome: e.target.value })}
+                onChange={(e) =>
+                  setAlunoForm({ ...alunoForm, nome: e.target.value })
+                }
                 placeholder="Ex: João Silva"
               />
             </div>
@@ -2424,7 +2862,9 @@ Você pode usar:
               <label className="text-sm font-medium">Matrícula *</label>
               <Input
                 value={alunoForm.matricula}
-                onChange={(e) => setAlunoForm({ ...alunoForm, matricula: e.target.value })}
+                onChange={(e) =>
+                  setAlunoForm({ ...alunoForm, matricula: e.target.value })
+                }
                 placeholder="Ex: 12345678"
                 className="font-mono"
               />
@@ -2434,21 +2874,29 @@ Você pode usar:
               <label className="text-sm font-medium">Turma *</label>
               <Select
                 value={alunoForm.turma}
-                onValueChange={(value) => setAlunoForm({ ...alunoForm, turma: value })}
+                onValueChange={(value) =>
+                  setAlunoForm({ ...alunoForm, turma: value })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione uma turma" />
                 </SelectTrigger>
                 <SelectContent>
                   {turmasList.map((t) => (
-                    <SelectItem key={t.nome} value={t.nome}>{t.nome}</SelectItem>
+                    <SelectItem key={t.nome} value={t.nome}>
+                      {t.nome}
+                    </SelectItem>
                   ))}
                   {turmasList.length === 0 && (
-                    <SelectItem value="_none" disabled>Nenhuma turma cadastrada</SelectItem>
+                    <SelectItem value="_none" disabled>
+                      Nenhuma turma cadastrada
+                    </SelectItem>
                   )}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">Crie uma turma primeiro se necessário</p>
+              <p className="text-xs text-gray-500">
+                Crie uma turma primeiro se necessário
+              </p>
             </div>
           </div>
 
@@ -2458,9 +2906,16 @@ Você pode usar:
             </Button>
             <Button
               onClick={handleCreateAluno}
-              disabled={isActionLoading || !alunoForm.nome || !alunoForm.matricula || !alunoForm.turma}
+              disabled={
+                isActionLoading ||
+                !alunoForm.nome ||
+                !alunoForm.matricula ||
+                !alunoForm.turma
+              }
             >
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Criar Aluno
             </Button>
           </div>
@@ -2468,55 +2923,123 @@ Você pode usar:
       </Dialog>
 
       {/* Modal Coordenador (Criar/Editar) */}
-      <Dialog open={showCoordinatorModal} onOpenChange={(open) => {
-        if (!open) {
-          setShowCoordinatorModal(false);
-          setCoordinatorToEdit(null);
-          setCoordinatorForm({ email: '', name: '', password: '', school_id: '', allowed_series: [] });
-        }
-      }}>
+      <Dialog
+        open={showCoordinatorModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowCoordinatorModal(false);
+            setCoordinatorToEdit(null);
+            setCoordinatorForm({
+              email: "",
+              name: "",
+              password: "",
+              school_id: "",
+              allowed_series: [],
+            });
+          }
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              {coordinatorToEdit ? 'Editar Coordenador' : 'Novo Coordenador'}
+              {coordinatorToEdit ? "Editar Coordenador" : "Novo Coordenador"}
             </DialogTitle>
             <DialogDescription>
-              {coordinatorToEdit ? 'Atualize os dados do coordenador' : 'Preencha os dados do novo coordenador'}
+              {coordinatorToEdit
+                ? "Atualize os dados do coordenador"
+                : "Preencha os dados do novo coordenador"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-4">
             {!coordinatorToEdit && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Email *</label>
-                <Input type="email" value={coordinatorForm.email} onChange={(e) => setCoordinatorForm({ ...coordinatorForm, email: e.target.value })} placeholder="coordenador@escola.com" />
+                <Input
+                  type="email"
+                  value={coordinatorForm.email}
+                  onChange={(e) =>
+                    setCoordinatorForm({
+                      ...coordinatorForm,
+                      email: e.target.value,
+                    })
+                  }
+                  placeholder="coordenador@escola.com"
+                />
               </div>
             )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Nome *</label>
-              <Input value={coordinatorForm.name} onChange={(e) => setCoordinatorForm({ ...coordinatorForm, name: e.target.value })} placeholder="Nome do Coordenador" />
+              <Input
+                value={coordinatorForm.name}
+                onChange={(e) =>
+                  setCoordinatorForm({
+                    ...coordinatorForm,
+                    name: e.target.value,
+                  })
+                }
+                placeholder="Nome do Coordenador"
+              />
             </div>
             {!coordinatorToEdit && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Senha *</label>
-                <Input type="password" value={coordinatorForm.password} onChange={(e) => setCoordinatorForm({ ...coordinatorForm, password: e.target.value })} placeholder="Minimo 8 caracteres" />
+                <Input
+                  type="password"
+                  value={coordinatorForm.password}
+                  onChange={(e) =>
+                    setCoordinatorForm({
+                      ...coordinatorForm,
+                      password: e.target.value,
+                    })
+                  }
+                  placeholder="Minimo 8 caracteres"
+                />
               </div>
             )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Escola *</label>
-              <Select value={coordinatorForm.school_id} onValueChange={(value) => setCoordinatorForm({ ...coordinatorForm, school_id: value })}>
-                <SelectTrigger><SelectValue placeholder="Selecione uma escola" /></SelectTrigger>
+              <Select
+                value={coordinatorForm.school_id}
+                onValueChange={(value) =>
+                  setCoordinatorForm({ ...coordinatorForm, school_id: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma escola" />
+                </SelectTrigger>
                 <SelectContent>
                   {schools.map((school) => (
-                    <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>
+                    <SelectItem key={school.id} value={school.id}>
+                      {school.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Acesso por Serie</label>
-              <p className="text-xs text-gray-500 mb-2">Deixe vazio para acesso total. Selecione as series que este coordenador pode visualizar.</p>
-              <div className="flex gap-2">
+              <label className="text-sm font-medium">Acesso por Turma</label>
+              <p className="text-xs text-gray-500 mb-2">
+                Selecione as turmas que este coordenador pode visualizar.
+              </p>
+              <span className="text-xs text-gray-600 mt-2">
+                Caso não selecionado o coordenador terá acesso a todas as turmas
+                da escola.
+              </span>
+              <DropdownTurma
+                options={turmasList.map((t) => ({
+                  label: t.nome,
+                  value: t.nome,
+                }))}
+                onChange={(turmas) =>
+                  setCoordinatorForm((prev) => ({
+                    ...prev,
+                    allowed_series: turmas,
+                  }))
+                }
+              />
+
+              {/* <div className="flex gap-2">
                 {['1', '2', '3'].map((serie) => (
                   <Button key={serie} type="button" variant={coordinatorForm.allowed_series.includes(serie) ? 'default' : 'outline'} size="sm" onClick={() => {
                     setCoordinatorForm(prev => ({
@@ -2530,34 +3053,63 @@ Você pode usar:
               </div>
               {coordinatorForm.allowed_series.length === 0 && (
                 <Badge className="bg-green-100 text-green-800 mt-2">Acesso Total</Badge>
-              )}
+              )} */}
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setShowCoordinatorModal(false)}>Cancelar</Button>
-            <Button onClick={handleSaveCoordinator} disabled={isActionLoading || !coordinatorForm.name || (!coordinatorToEdit && (!coordinatorForm.email || !coordinatorForm.password)) || !coordinatorForm.school_id}>
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {coordinatorToEdit ? 'Salvar' : 'Criar Coordenador'}
+            <Button
+              variant="outline"
+              onClick={() => setShowCoordinatorModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveCoordinator}
+              disabled={
+                isActionLoading ||
+                !coordinatorForm.name ||
+                (!coordinatorToEdit &&
+                  (!coordinatorForm.email || !coordinatorForm.password)) ||
+                !coordinatorForm.school_id
+              }
+            >
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {coordinatorToEdit ? "Salvar" : "Criar Coordenador"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* AlertDialog Confirmar Exclusao de Coordenador */}
-      <AlertDialog open={!!coordinatorToDelete} onOpenChange={(open) => !open && setCoordinatorToDelete(null)}>
+      <AlertDialog
+        open={!!coordinatorToDelete}
+        onOpenChange={(open) => !open && setCoordinatorToDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Coordenador</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir o coordenador <strong>{coordinatorToDelete?.name}</strong>?
+              Tem certeza que deseja excluir o coordenador{" "}
+              <strong>{coordinatorToDelete?.name}</strong>?
               <br />
-              <span className="text-red-600 font-medium">Esta acao nao pode ser desfeita. O acesso sera removido imediatamente.</span>
+              <span className="text-red-600 font-medium">
+                Esta acao nao pode ser desfeita. O acesso sera removido
+                imediatamente.
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteCoordinator} className="bg-red-600 hover:bg-red-700" disabled={isActionLoading}>
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <AlertDialogAction
+              onClick={handleDeleteCoordinator}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={isActionLoading}
+            >
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2565,25 +3117,50 @@ Você pode usar:
       </AlertDialog>
 
       {/* Dialog Resetar Senha do Coordenador */}
-      <Dialog open={!!showResetPasswordModal} onOpenChange={(open) => { if (!open) { setShowResetPasswordModal(null); setNewCoordinatorPassword(''); } }}>
+      <Dialog
+        open={!!showResetPasswordModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowResetPasswordModal(null);
+            setNewCoordinatorPassword("");
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5" />
               Resetar Senha
             </DialogTitle>
-            <DialogDescription>Definir nova senha para {showResetPasswordModal?.name}</DialogDescription>
+            <DialogDescription>
+              Definir nova senha para {showResetPasswordModal?.name}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Nova Senha *</label>
-              <Input type="password" value={newCoordinatorPassword} onChange={(e) => setNewCoordinatorPassword(e.target.value)} placeholder="Minimo 8 caracteres" />
+              <Input
+                type="password"
+                value={newCoordinatorPassword}
+                onChange={(e) => setNewCoordinatorPassword(e.target.value)}
+                placeholder="Minimo 8 caracteres"
+              />
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setShowResetPasswordModal(null)}>Cancelar</Button>
-            <Button onClick={handleResetCoordinatorPassword} disabled={isActionLoading || newCoordinatorPassword.length < 8}>
-              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button
+              variant="outline"
+              onClick={() => setShowResetPasswordModal(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleResetCoordinatorPassword}
+              disabled={isActionLoading || newCoordinatorPassword.length < 8}
+            >
+              {isActionLoading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Alterar Senha
             </Button>
           </div>
@@ -2591,7 +3168,15 @@ Você pode usar:
       </Dialog>
 
       {/* Dialog Ativar Todos os Alunos */}
-      <Dialog open={showResetAllModal} onOpenChange={(open) => { if (!open && !isResetAllLoading) { setShowResetAllModal(false); setResetAllResults(null); } }}>
+      <Dialog
+        open={showResetAllModal}
+        onOpenChange={(open) => {
+          if (!open && !isResetAllLoading) {
+            setShowResetAllModal(false);
+            setResetAllResults(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2599,7 +3184,9 @@ Você pode usar:
               Ativar Todos os Alunos
             </DialogTitle>
             <DialogDescription>
-              {resetAllResults ? 'Processo concluido!' : 'Definir senha padrao SENHA123 para todos os alunos desta escola'}
+              {resetAllResults
+                ? "Processo concluido!"
+                : "Definir senha padrao SENHA123 para todos os alunos desta escola"}
             </DialogDescription>
           </DialogHeader>
 
@@ -2611,22 +3198,37 @@ Você pode usar:
                   <span className="font-medium">Resultado:</span>
                 </div>
                 <ul className="text-sm space-y-1 ml-7">
-                  <li><strong>{resetAllResults.reset}</strong> senha(s) resetada(s)</li>
-                  <li><strong>{resetAllResults.created}</strong> conta(s) criada(s)</li>
+                  <li>
+                    <strong>{resetAllResults.reset}</strong> senha(s)
+                    resetada(s)
+                  </li>
+                  <li>
+                    <strong>{resetAllResults.created}</strong> conta(s)
+                    criada(s)
+                  </li>
                   {resetAllResults.errors > 0 && (
-                    <li className="text-red-600"><strong>{resetAllResults.errors}</strong> erro(s)</li>
+                    <li className="text-red-600">
+                      <strong>{resetAllResults.errors}</strong> erro(s)
+                    </li>
                   )}
                 </ul>
               </div>
               <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
                 <p className="text-sm">
-                  <strong>Senha padrao:</strong> <span className="font-mono">SENHA123</span>
+                  <strong>Senha padrao:</strong>{" "}
+                  <span className="font-mono">SENHA123</span>
                 </p>
                 <p className="text-xs text-gray-600 mt-1">
                   Alunos serao obrigados a trocar a senha no primeiro login.
                 </p>
               </div>
-              <Button className="w-full" onClick={() => { setShowResetAllModal(false); setResetAllResults(null); }}>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  setShowResetAllModal(false);
+                  setResetAllResults(null);
+                }}
+              >
                 Fechar
               </Button>
             </div>
@@ -2639,16 +3241,28 @@ Você pode usar:
                 <ul className="text-sm text-yellow-700 dark:text-yellow-300 mt-2 ml-4 list-disc space-y-1">
                   <li>Resetar senha de alunos que ja tem conta</li>
                   <li>Criar conta para alunos que ainda nao tem</li>
-                  <li>Todos recebem senha <span className="font-mono font-bold">SENHA123</span></li>
+                  <li>
+                    Todos recebem senha{" "}
+                    <span className="font-mono font-bold">SENHA123</span>
+                  </li>
                 </ul>
               </div>
               <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setShowResetAllModal(false)} disabled={isResetAllLoading}>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowResetAllModal(false)}
+                  disabled={isResetAllLoading}
+                >
                   Cancelar
                 </Button>
-                <Button onClick={handleResetAllPasswords} disabled={isResetAllLoading}>
-                  {isResetAllLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {isResetAllLoading ? 'Processando...' : 'Confirmar'}
+                <Button
+                  onClick={handleResetAllPasswords}
+                  disabled={isResetAllLoading}
+                >
+                  {isResetAllLoading && (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  )}
+                  {isResetAllLoading ? "Processando..." : "Confirmar"}
                 </Button>
               </div>
             </div>
@@ -2676,20 +3290,40 @@ Você pode usar:
               </div>
             </div>
             <div className="text-sm text-muted-foreground">
-              <p><strong>Destinatários:</strong> {messageForm.target_type === 'students' ? 'Alunos' : 'Coordenadores'}</p>
+              <p>
+                <strong>Destinatários:</strong>{" "}
+                {messageForm.target_type === "students"
+                  ? "Alunos"
+                  : "Coordenadores"}
+              </p>
               {messageForm.filter_school_ids.length > 0 && (
-                <p><strong>Escolas:</strong> {messageForm.filter_school_ids.length} selecionada(s)</p>
+                <p>
+                  <strong>Escolas:</strong>{" "}
+                  {messageForm.filter_school_ids.length} selecionada(s)
+                </p>
               )}
               {messageForm.filter_series.length > 0 && (
-                <p><strong>Séries:</strong> {messageForm.filter_series.join(', ')}º Ano</p>
+                <p>
+                  <strong>Séries:</strong>{" "}
+                  {messageForm.filter_series.join(", ")}º Ano
+                </p>
               )}
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-4">
-            <Button variant="outline" onClick={() => setShowMessagePreview(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowMessagePreview(false)}
+            >
               Editar
             </Button>
-            <Button onClick={() => { setShowMessagePreview(false); handleSendMessage(); }} disabled={isSendingMessage}>
+            <Button
+              onClick={() => {
+                setShowMessagePreview(false);
+                handleSendMessage();
+              }}
+              disabled={isSendingMessage}
+            >
               {isSendingMessage ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -2707,19 +3341,25 @@ Você pode usar:
       </Dialog>
 
       {/* AlertDialog de Confirmar Delete de Mensagem */}
-      <AlertDialog open={!!messageToDelete} onOpenChange={(open) => !open && setMessageToDelete(null)}>
+      <AlertDialog
+        open={!!messageToDelete}
+        onOpenChange={(open) => !open && setMessageToDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Mensagem</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir a mensagem "{messageToDelete?.title}"?
-              Esta ação não pode ser desfeita e a mensagem será removida para todos os destinatários.
+              Tem certeza que deseja excluir a mensagem "
+              {messageToDelete?.title}"? Esta ação não pode ser desfeita e a
+              mensagem será removida para todos os destinatários.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => messageToDelete && handleDeleteMessage(messageToDelete.id)}
+              onClick={() =>
+                messageToDelete && handleDeleteMessage(messageToDelete.id)
+              }
               className="bg-red-600 hover:bg-red-700"
             >
               Excluir

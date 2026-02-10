@@ -74,7 +74,7 @@ function flattenProjetosStudents(
     if (schoolId && projeto.school_id && projeto.school_id !== schoolId) {
       continue;
     }
-
+    
     const students = (projeto.students as any[]) || [];
     const triScoresByArea = (projeto.tri_scores_by_area as Record<string, any>) || {};
 
@@ -96,7 +96,7 @@ function flattenProjetosStudents(
       const turma = student.turma || null;
 
       // Filter by allowed series if provided
-      if (!isTurmaAllowed(turma, allowedSeries)) {
+      if (!allowedSeries?.includes(turma || "")) {
         continue;
       }
 
@@ -6791,7 +6791,7 @@ Para cada disciplina:
 
       // Flatten students from all projetos (already filtered by allowedSeries in helper)
       const results = flattenProjetosStudents(projetos || [], schoolId, allowedSeries);
-
+      
       console.log(`[ESCOLA DASHBOARD] Flatten: ${results.length} alunos de ${projetos?.length || 0} projetos`);
 
       // Extrair séries das turmas (ex: "1ª Série A" -> "1ª Série")
