@@ -13,7 +13,7 @@
  *   "Turma 3A" → "3"
  */
 export function extractSerieNumber(turma: string | null): string | null {
-  if (!turma || turma === 'null' || turma.trim() === '') return null;
+  if (!turma || turma === "null" || turma.trim() === "") return null;
 
   // Pattern 1: EM followed by number (e.g., EM3VA, EM1VB, EM2VC)
   const emPattern = turma.match(/^EM(\d)/i);
@@ -38,7 +38,7 @@ export function extractSerieNumber(turma: string | null): string | null {
  * For display purposes - returns full série string
  */
 export function extractSerie(turma: string | null): string | null {
-  if (!turma || turma === 'null' || turma.trim() === '') return null;
+  if (!turma || turma === "null" || turma.trim() === "") return null;
 
   // Pattern 1: EM followed by number (e.g., EM3VA → "3ª Série")
   const emPattern = turma.match(/^EM(\d)/i);
@@ -57,10 +57,10 @@ export function extractSerie(turma: string | null): string | null {
 export function normalizeSerie(serie: string): string {
   return serie
     .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove accents
-    .replace(/[ªº]/g, '')
-    .replace(/\s+/g, ' ')
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .replace(/[ªº]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -69,18 +69,23 @@ export function normalizeSerie(serie: string): string {
  * allowedSeries can contain: "3", "1", "2" (just numbers)
  * or full names like "3ª Série", "1ª Série"
  */
-export function isTurmaAllowed(turma: string | null, allowedSeries: string[] | null): boolean {
+export function isTurmaAllowed(
+  turma: string | null,
+  allowedSeries: string[] | null,
+): boolean {
   // If no restrictions, allow all
   if (!allowedSeries || allowedSeries.length === 0) return true;
 
+  return allowedSeries.includes(turma || "");
+
   // Extract the série number from the turma
-  const serieNumber = extractSerieNumber(turma);
-  if (!serieNumber) return false;
+  // const serieNumber = extractSerieNumber(turma);
+  // if (!serieNumber) return false;
 
   // Check if the série number matches any allowed series
-  return allowedSeries.some(allowed => {
-    // Extract number from allowed (e.g., "3" from "3ª Série" or just "3")
-    const allowedNumber = allowed.match(/(\d)/)?.[1];
-    return allowedNumber === serieNumber;
-  });
+  // return allowedSeries.some(allowed => {
+  //   // Extract number from allowed (e.g., "3" from "3ª Série" or just "3")
+  //   const allowedNumber = allowed.match(/(\d)/)?.[1];
+  //   return allowedNumber === serieNumber;
+  // });
 }

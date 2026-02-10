@@ -1918,7 +1918,7 @@ export default function AdminPage() {
                                       variant="secondary"
                                       className="text-xs"
                                     >
-                                      {s}a
+                                      {s}
                                     </Badge>
                                   ))}
                                 </div>

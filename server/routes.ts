@@ -96,7 +96,7 @@ function flattenProjetosStudents(
       const turma = student.turma || null;
 
       // Filter by allowed series if provided
-      if (!allowedSeries?.includes(turma || "")) {
+      if (!isTurmaAllowed(turma, allowedSeries)) {
         continue;
       }
 
