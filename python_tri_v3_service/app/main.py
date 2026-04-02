@@ -566,10 +566,10 @@ async def calcular_tri_cientifico(request: Request):
 
             # Mínimo de 10 alunos para calibração
             if len(alunos_binario) < 10:
-                print(f"[TRI V3 CIENTÍFICO] AVISO: {area_upper} com {len(alunos_binario)} alunos (<10), usando mediana")
+                print(f"[TRI V3 CIENTÍFICO] AVISO: {area_code} com {len(alunos_binario)} alunos (<10), usando mediana")
                 for ab in alunos_binario:
                     acertos = sum(ab['respostas'])
-                    ref = tabela.obter(area_upper, acertos)
+                    ref = tabela.obter(area_code, acertos)
                     aluno_id = ab['aluno_id']
                     if aluno_id not in resultados_por_aluno:
                         resultados_por_aluno[aluno_id] = {
@@ -577,18 +577,18 @@ async def calcular_tri_cientifico(request: Request):
                             'nome': ab['nome'],
                         }
                     from .motores.cientifico import estado_tri
-                    resultados_por_aluno[aluno_id][f'tri_{area_upper.lower()}'] = ref['tri_med']
-                    resultados_por_aluno[aluno_id][f'{area_upper.lower()}_acertos'] = acertos
+                    resultados_por_aluno[aluno_id][f'tri_{area_code.lower()}'] = ref['tri_med']
+                    resultados_por_aluno[aluno_id][f'{area_code.lower()}_acertos'] = acertos
                 continue
 
             # Rodar pipeline científico para esta área
             resultado_area = pipeline_cientifico(
                 alunos=alunos_binario,
-                area=area_upper,
+                area=area_code,
                 tabela=tabela,
             )
 
-            diagnostico_geral[area_upper] = resultado_area['diagnostico']
+            diagnostico_geral[area_code] = resultado_area['diagnostico']
 
             # Mapear resultados para formato V2
             for r in resultado_area['resultados_alunos']:
@@ -598,10 +598,10 @@ async def calcular_tri_cientifico(request: Request):
                         'id': aluno_id,
                         'nome': r.get('nome', ''),
                     }
-                resultados_por_aluno[aluno_id][f'tri_{area_upper.lower()}'] = r['nota_ancorada']
-                resultados_por_aluno[aluno_id][f'{area_upper.lower()}_acertos'] = r['acertos']
-                resultados_por_aluno[aluno_id][f'{area_upper.lower()}_theta'] = r['theta']
-                resultados_por_aluno[aluno_id][f'{area_upper.lower()}_estado'] = r['estado_tri']
+                resultados_por_aluno[aluno_id][f'tri_{area_code.lower()}'] = r['nota_ancorada']
+                resultados_por_aluno[aluno_id][f'{area_code.lower()}_acertos'] = r['acertos']
+                resultados_por_aluno[aluno_id][f'{area_code.lower()}_theta'] = r['theta']
+                resultados_por_aluno[aluno_id][f'{area_code.lower()}_estado'] = r['estado_tri']
 
         # ─── Montar resultado final no formato V2 ───
         resultados = []
