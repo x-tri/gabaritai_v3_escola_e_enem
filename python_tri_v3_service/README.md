@@ -1,6 +1,8 @@
 # XTRI Engine API — TRI V3
 
-API de estimação TRI para simulados ENEM com dois motores:
+API de estimação TRI para simulados ENEM com dois motores de cálculo. Construída em FastAPI com Docker, projetada como drop-in replacement da V2 (Flask) existente.
+
+## Endpoints
 
 | Motor | Rota | Uso |
 |---|---|---|
@@ -8,11 +10,12 @@ API de estimação TRI para simulados ENEM com dois motores:
 | **Científico** (MML + EAP) | `POST /api/v3/calibrar-cientifico` | Fechamento de simulados, banco de itens |
 | **Theta Individual** | `POST /api/v3/estimar-theta` | Alunos retardatários, OMR assíncrono |
 | **Referências** | `GET /api/v3/referencias/{area}` | Tabela oficial para frontend |
+| **Health Check** | `GET /health` | Monitoramento de saúde do serviço |
 
 ## Quick Start
 
 ```bash
-# Docker
+# Docker (recomendado)
 docker compose up --build
 
 # Ou direto com Python
@@ -20,48 +23,35 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 5003 --reload
 ```
 
-## Endpoints
+Acesse `http://localhost:5003/docs` para a documentação interativa (Swagger UI).
 
-### Health Check
+## Documentação
+
+Para a documentação técnica completa, incluindo guia de integração com o backend Node.js, referência de payloads, estratégia de migração e detalhes da arquitetura híbrida, consulte o arquivo **[DOCUMENTACAO_DEV.md](DOCUMENTACAO_DEV.md)**.
+
+## Testes
+
+Os testes de integração estão no diretório `tests/` e podem ser executados com a API rodando localmente:
+
 ```bash
-curl http://localhost:5003/health
+# Teste com dados sintéticos (5 cenários)
+python3 tests/teste_sintetico.py
+
+# Teste com dados reais de simulados (requer Doissimulados.xlsx)
+python3 tests/teste_real_simulados.py
 ```
 
-### Motor Heurístico (compatível com V2)
-```bash
-curl -X POST http://localhost:5003/api/calcular-tri \
-  -H "Content-Type: application/json" \
-  -d '{
-    "alunos": [{"id": "1", "nome": "João", "q1": "A", "q2": "B", ...}],
-    "gabarito": {"1": "A", "2": "B", ...},
-    "areas_config": {"LC": [1, 45]}
-  }'
-```
-
-### Motor Científico
-```bash
-curl -X POST http://localhost:5003/api/v3/calibrar-cientifico \
-  -H "Content-Type: application/json" \
-  -d '{
-    "simulado_id": "sim_2026_01",
-    "area": "LC",
-    "alunos": [
-      {"aluno_id": "uuid-1", "nome": "João", "respostas": [1,0,1,1,0,...]}
-    ]
-  }'
-```
-
-### Swagger UI
-Acesse `http://localhost:5003/docs` para documentação interativa.
+Os relatórios visuais do último teste real estão em `tests/relatorios/`.
 
 ## Migração V2 → V3
 
-A rota `/api/calcular-tri` é um **drop-in replacement** da V2 (Flask).
-Basta alterar a variável `PYTHON_TRI_URL` no backend Node.js para apontar para a V3.
+A rota `POST /api/calcular-tri` é um **drop-in replacement** da V2 (Flask). Para migrar, basta alterar a variável de ambiente `PYTHON_TRI_URL` no backend Node.js para apontar para a nova URL da V3. A V2 pode continuar rodando como fallback.
 
 ## Stack
 
-- **FastAPI** + **Pydantic v2** (validação automática)
-- **NumPy** + **SciPy** (motor científico)
-- **Docker** (deploy containerizado)
-- Porta: **5003** (retrocompatível)
+| Componente | Tecnologia |
+|---|---|
+| Framework | FastAPI + Pydantic v2 |
+| Motor Matemático | NumPy + SciPy |
+| Deploy | Docker (multi-stage, non-root) |
+| Porta | 5003 (retrocompatível) |
