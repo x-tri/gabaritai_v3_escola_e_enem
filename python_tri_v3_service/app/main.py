@@ -595,41 +595,86 @@ async def calcular_tri_cientifico(request: Request):
                 aluno_id = r['aluno_id']
                 if aluno_id not in resultados_por_aluno:
                     resultados_por_aluno[aluno_id] = {
-                        'id': aluno_id,
-                        'nome': r.get('nome', ''),
+                        'nome': r.get('nome', '') or aluno_id,
                     }
-                resultados_por_aluno[aluno_id][f'tri_{area_code.lower()}'] = r['nota_ancorada']
-                resultados_por_aluno[aluno_id][f'{area_code.lower()}_acertos'] = r['acertos']
-                resultados_por_aluno[aluno_id][f'{area_code.lower()}_theta'] = r['theta']
-                resultados_por_aluno[aluno_id][f'{area_code.lower()}_estado'] = r['estado_tri']
+                al = area_code.lower()
+                resultados_por_aluno[aluno_id][f'tri_{al}'] = r['nota_ancorada']
+                resultados_por_aluno[aluno_id][f'{al}_acertos'] = r['acertos']
+                # Guardar dados do científico para o bloco 'detalhes'
+                resultados_por_aluno[aluno_id][f'_det_{area_code}'] = {
+                    'acertos': r['acertos'],
+                    'baseline': tabela.obter(area_code, r['acertos'])['tri_med'],
+                    'ajustes': {
+                        'coerencia': 0,
+                        'penalidade': 0,
+                        'relacao': 0,
+                    },
+                    'tri_ajustado': r['nota_ancorada'],
+                    'motivo': f"{area_code}: {r['acertos']} acertos | θ={r['theta']:.2f} | {r['estado_tri']}",
+                }
 
-        # ─── Montar resultado final no formato V2 ───
+        # ─── Baselines para áreas não processadas (front espera 4 áreas) ───
+        from .tabela_referencia import TRI_MINIMA_OFICIAL
+        area_baselines = {
+            'LC': tabela.obter('LC', 0)['tri_med'],
+            'CH': tabela.obter('CH', 0)['tri_med'],
+            'CN': tabela.obter('CN', 0)['tri_med'],
+            'MT': tabela.obter('MT', 0)['tri_med'],
+        }
+
+        # ─── Montar resultado final no formato V2 (idêntico ao heurístico) ───
         resultados = []
         for aluno_id, dados in resultados_por_aluno.items():
-            # TRI geral = média das áreas disponíveis
-            tris = [v for k, v in dados.items() if k.startswith('tri_') and isinstance(v, (int, float))]
-            tri_geral = round(float(np.mean(tris)), 1) if tris else 0.0
+            resultado_aluno: Dict[str, Any] = {
+                'nome': dados.get('nome', aluno_id),
+            }
+
+            # Preencher as 4 áreas (processadas ou zeradas)
+            detalhes: Dict[str, Any] = {}
+            for area_key in ['LC', 'CH', 'CN', 'MT']:
+                al = area_key.lower()
+                if f'tri_{al}' in dados:
+                    # Área processada
+                    resultado_aluno[f'tri_{al}'] = dados[f'tri_{al}']
+                    resultado_aluno[f'{al}_acertos'] = dados[f'{al}_acertos']
+                    detalhes[area_key] = dados.get(f'_det_{area_key}', {})
+                else:
+                    # Área não processada — baseline zero acertos
+                    resultado_aluno[f'tri_{al}'] = area_baselines[area_key]
+                    resultado_aluno[f'{al}_acertos'] = 0
+                    detalhes[area_key] = {
+                        'acertos': 0,
+                        'ajustes': {'coerencia': 0, 'penalidade': 0, 'relacao': 0},
+                        'baseline': area_baselines[area_key],
+                        'motivo': f'Zero acertos: TRI oficial ({area_baselines[area_key]}) sem ajustes',
+                        'tri_ajustado': area_baselines[area_key],
+                    }
+
+            resultado_aluno['detalhes'] = detalhes
+
+            # TRI geral = média das 4 áreas
+            tris = [resultado_aluno[f'tri_{a.lower()}'] for a in ['LC', 'CH', 'CN', 'MT']]
+            resultado_aluno['tri_geral'] = round(float(np.mean(tris)), 1)
 
             # TCT (nota bruta 0-4)
-            total_acertos = sum(v for k, v in dados.items() if k.endswith('_acertos') and isinstance(v, (int, float)))
-            total_questoes = sum(end - start + 1 for start, end in areas_config.values())
-            tct = round((total_acertos / total_questoes) * 4.0, 2) if total_questoes > 0 else 0.0
+            total_acertos = sum(resultado_aluno[f'{a.lower()}_acertos'] for a in ['LC', 'CH', 'CN', 'MT'])
+            total_questoes = 180  # 4 × 45
+            resultado_aluno['tct'] = round((total_acertos / total_questoes) * 4.0, 2)
 
-            dados['tri_geral'] = tri_geral
-            dados['tct'] = tct
-            resultados.append(dados)
+            resultados.append(resultado_aluno)
 
         elapsed = time.time() - t0
         print(f"[TRI V3 CIENTÍFICO] Concluído em {elapsed:.2f}s | {len(resultados)} alunos × {len(areas_config)} áreas")
 
         # Prova analysis (resumo)
-        tris_gerais = [r['tri_geral'] for r in resultados if r.get('tri_geral')]
+        tris_gerais = [r['tri_geral'] for r in resultados]
         prova_analysis = {
             'total_alunos': len(resultados),
             'motor': 'cientifico_v3',
             'tri_medio': round(float(np.mean(tris_gerais)), 1) if tris_gerais else 0,
             'tri_min': round(float(np.min(tris_gerais)), 1) if tris_gerais else 0,
             'tri_max': round(float(np.max(tris_gerais)), 1) if tris_gerais else 0,
+            'tct_medio': round(float(np.mean([r['tct'] for r in resultados])), 2) if resultados else 0,
             'diagnostico_por_area': diagnostico_geral,
         }
 
