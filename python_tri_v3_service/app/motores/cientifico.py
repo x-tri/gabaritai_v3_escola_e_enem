@@ -9,7 +9,7 @@ Implementa TRI 2PL real com:
 Regras invioláveis:
 1. Calibração independente por simulado × área (NUNCA misturar)
 2. Parâmetro c fixo em 0.20 (5 alternativas) para N < 500
-3. Ancoragem contínua: nota = ref_min_K + norm.cdf(θ) × (ref_max_K − ref_min_K)
+3. Ancoragem min-max: nota = ref_min_K + (θ−θ_min_K)/(θ_max_K−θ_min_K) × (ref_max_K − ref_min_K)
 """
 
 import numpy as np
@@ -143,9 +143,10 @@ def ancorar_notas(
 
     Lógica:
       - Para K acertos, a referência define [ref_min_K, ref_max_K]
-      - A CDF da N(0,1) aplicada ao θ define a posição no intervalo (contínua)
-      - nota = ref_min_K + norm.cdf(θ) × (ref_max_K - ref_min_K)
-      - Intervalo colapsado (min == max) → nota fixa (ex: 45 acertos)
+      - Normalização min-max do θ dentro do grupo com mesmo K acertos
+      - pct = (θ - θ_min_K) / (θ_max_K - θ_min_K)
+      - nota = ref_min_K + pct × (ref_max_K - ref_min_K)
+      - REGRA INVIOLÁVEL: θ diferente → nota diferente; θ igual → nota igual
       - Teto absoluto por área via TRI_MAXIMA_OFICIAL (proteção contra extrapolação)
 
     Args:
@@ -158,6 +159,19 @@ def ancorar_notas(
     """
     resultados = []
 
+    # Agrupar thetas por número de acertos para normalização min-max
+    acertos_groups: Dict[int, List[float]] = {}
+    for t in thetas:
+        k = t['acertos']
+        if k not in acertos_groups:
+            acertos_groups[k] = []
+        acertos_groups[k].append(t['theta'])
+
+    # Pré-calcular min/max de θ por grupo
+    grupo_stats: Dict[int, Tuple[float, float]] = {}
+    for k, thetas_k in acertos_groups.items():
+        grupo_stats[k] = (min(thetas_k), max(thetas_k))
+
     for t in thetas:
         k = t['acertos']
         theta_i = t['theta']
@@ -167,20 +181,61 @@ def ancorar_notas(
         ref_med = ref['tri_med']
         ref_max = ref['tri_max']
 
-        if ref_min == ref_max:
-            # Intervalo colapsado (ex: 45 acertos) → nota fixa
+        theta_min_k, theta_max_k = grupo_stats[k]
+
+        if ref_min == ref_max or theta_min_k == theta_max_k:
+            # Intervalo colapsado OU todos com mesmo θ → nota fixa
             nota = ref_med
         else:
-            # Interpolação contínua via CDF N(0,1) — θ diferentes SEMPRE geram notas diferentes
-            pct = float(norm.cdf(theta_i))
+            # Min-max: menor θ do grupo → ref_min, maior → ref_max
+            # Monotônico: θ diferente SEMPRE gera nota diferente
+            pct = (theta_i - theta_min_k) / (theta_max_k - theta_min_k)
             nota = ref_min + pct * (ref_max - ref_min)
 
         # Teto absoluto por área (média histórica, proteção contra extrapolação)
         tri_maxima = TRI_MAXIMA_OFICIAL.get(area, 1000.0)
         nota = min(nota, tri_maxima)
 
-        resultado = {**t, 'nota_ancorada': round(float(nota), 1)}
+        resultado = {**t, 'nota_ancorada': float(nota)}
         resultados.append(resultado)
+
+    # REGRA INVIOLÁVEL: θ diferente → nota diferente (dentro do mesmo K)
+    # Tentar arredondamento crescente (1, 2, 3 decimais) até zero violações
+    for decimais in (1, 2, 3, 4):
+        for r in resultados:
+            r['nota_ancorada'] = round(r['nota_ancorada'], decimais)
+
+        # Checar violações intra-K
+        violacao = False
+        for k_check in acertos_groups:
+            k_notas: Dict[float, float] = {}
+            for r in resultados:
+                if r['acertos'] != k_check:
+                    continue
+                n = r['nota_ancorada']
+                t_r = round(r['theta'], 6)
+                if n in k_notas and k_notas[n] != t_r:
+                    violacao = True
+                    break
+                k_notas[n] = t_r
+            if violacao:
+                break
+
+        if not violacao:
+            break
+
+        # Restaurar nota bruta para tentar próximo nível de decimais
+        for r in resultados:
+            k = r['acertos']
+            theta_i = r['theta']
+            ref = tabela.obter(area, k)
+            theta_min_k, theta_max_k = grupo_stats[k]
+            if ref['tri_min'] == ref['tri_max'] or theta_min_k == theta_max_k:
+                r['nota_ancorada'] = float(ref['tri_med'])
+            else:
+                pct = (theta_i - theta_min_k) / (theta_max_k - theta_min_k)
+                nota_bruta = ref['tri_min'] + pct * (ref['tri_max'] - ref['tri_min'])
+                r['nota_ancorada'] = min(nota_bruta, TRI_MAXIMA_OFICIAL.get(area, 1000.0))
 
     return resultados
 
