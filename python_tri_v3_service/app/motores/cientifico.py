@@ -126,7 +126,7 @@ def eap_theta(
     posterior /= s
     theta_eap = float(np.sum(theta_grid * posterior))
     se_eap = float(np.sqrt(np.sum((theta_grid - theta_eap) ** 2 * posterior)))
-    return round(theta_eap, 6), round(se_eap, 4)
+    return round(theta_eap, 4), round(se_eap, 4)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -144,12 +144,11 @@ def ancorar_notas(
     Lógica:
       - Para K acertos, a referência define [ref_min_K, ref_max_K]
       - CDF N(0,1) posiciona o θ dentro do intervalo (posição absoluta)
-      - θ arredondado a 2 decimais (ruído EAP < 0.01 não é habilidade real)
       - nota = ref_min_K + norm.cdf(θ) × (ref_max_K - ref_min_K)
       - Intervalo colapsado (min == max) → nota fixa
       - Teto absoluto por área via TRI_MAXIMA_OFICIAL (escala histórica)
       - 1 casa decimal (padrão ENEM)
-      - REGRA: θ diferente → nota diferente; θ igual → nota igual
+      - θ com precisão total do EAP (sem arredondamento)
 
     Args:
         thetas: Lista de dicts com 'aluno_id', 'acertos', 'theta', 'se'
@@ -160,11 +159,6 @@ def ancorar_notas(
         Lista de dicts com 'nota_ancorada' adicionado
     """
     resultados = []
-
-    # Arredondar θ a 2 decimais para ancoragem — diferenças < 0.01 são ruído
-    # do EAP, não habilidade real distinta. Garante θ≠ → nota≠ com 1 decimal.
-    for t in thetas:
-        t['theta'] = round(t['theta'], 2)
 
     for t in thetas:
         k = t['acertos']
