@@ -9,7 +9,7 @@ Implementa TRI 2PL real com:
 Regras invioláveis:
 1. Calibração independente por simulado × área (NUNCA misturar)
 2. Parâmetro c fixo em 0.20 (5 alternativas) para N < 500
-3. Ancoragem CDF: nota = ref_min_K + norm.cdf(θ) × (ref_max_K − ref_min_K), 1 decimal
+3. Ancoragem min-max: menor θ do grupo → ref_min, maior → ref_max, 1 decimal
 """
 
 import numpy as np
@@ -97,7 +97,7 @@ def calibrar_itens(
 def eap_theta(
     responses: np.ndarray,
     item_params: List[Dict[str, float]],
-    n_quad: int = 41
+    n_quad: int = 81
 ) -> Tuple[float, float]:
     """
     Estima θ via EAP (Expected A Posteriori) com prior N(0,1).
@@ -143,12 +143,13 @@ def ancorar_notas(
 
     Lógica:
       - Para K acertos, a referência define [ref_min_K, ref_max_K]
-      - A CDF da N(0,1) aplicada ao θ posiciona o aluno dentro do intervalo
-      - nota = ref_min_K + norm.cdf(θ) × (ref_max_K - ref_min_K)
-      - Intervalo colapsado (min == max) → nota fixa (ex: 45 acertos MT = 987.6)
+      - Min-max do θ dentro do grupo com mesmo K ocupa toda a amplitude
+      - O menor θ do grupo → ref_min, o maior → ref_max
+      - nota = ref_min_K + (θ - θ_min_K)/(θ_max_K - θ_min_K) × (ref_max_K - ref_min_K)
+      - Grupo com 1 aluno ou todos com mesmo θ → nota = ref_med
       - Teto absoluto por área via TRI_MAXIMA_OFICIAL (escala histórica)
       - 1 casa decimal (padrão ENEM)
-      - θ igual → nota igual; θ muito próximos podem arredondar para mesma nota
+      - REGRA: θ diferente → nota diferente; θ igual → nota igual
 
     Args:
         thetas: Lista de dicts com 'aluno_id', 'acertos', 'theta', 'se'
@@ -160,6 +161,24 @@ def ancorar_notas(
     """
     resultados = []
 
+    # Arredondar θ a 2 decimais para ancoragem — diferenças < 0.01 são ruído
+    # do EAP, não habilidade real distinta. Garante θ≠ → nota≠ com 1 decimal.
+    for t in thetas:
+        t['theta'] = round(t['theta'], 2)
+
+    # Agrupar thetas por K acertos para normalização min-max
+    acertos_groups: Dict[int, List[float]] = {}
+    for t in thetas:
+        k = t['acertos']
+        if k not in acertos_groups:
+            acertos_groups[k] = []
+        acertos_groups[k].append(t['theta'])
+
+    # Min/max de θ por grupo
+    grupo_stats: Dict[int, Tuple[float, float]] = {}
+    for k, thetas_k in acertos_groups.items():
+        grupo_stats[k] = (min(thetas_k), max(thetas_k))
+
     for t in thetas:
         k = t['acertos']
         theta_i = t['theta']
@@ -169,10 +188,12 @@ def ancorar_notas(
         ref_med = ref['tri_med']
         ref_max = ref['tri_max']
 
-        if ref_min == ref_max:
+        theta_min_k, theta_max_k = grupo_stats[k]
+
+        if ref_min == ref_max or theta_min_k == theta_max_k:
             nota = ref_med
         else:
-            pct = float(norm.cdf(theta_i))
+            pct = (theta_i - theta_min_k) / (theta_max_k - theta_min_k)
             nota = ref_min + pct * (ref_max - ref_min)
 
         # Teto absoluto por área (escala histórica, nunca 1000)
