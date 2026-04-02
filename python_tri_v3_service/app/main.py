@@ -413,6 +413,193 @@ async def estimar_theta(payload: RequestEstimarTheta):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# ENDPOINT — ADAPTADOR V2→CIENTÍFICO (drop-in replacement)
+# ════════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/v3/calcular-tri-cientifico", response_model=ResponseCalcularTRI)
+async def calcular_tri_cientifico(request: Request):
+    """
+    Recebe dados no formato V2 (letras + gabarito + areas_config),
+    converte para binário, roda o motor científico por área,
+    e retorna no mesmo formato que o heurístico.
+
+    Drop-in replacement: no Express, troque apenas a URL:
+      /api/calcular-tri → /api/v3/calcular-tri-cientifico
+    """
+    if tabela is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Tabela de referência TRI não carregada"
+        )
+
+    try:
+        data = await request.json()
+
+        if not data or 'alunos' not in data or 'gabarito' not in data:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "erro",
+                    "mensagem": "Dados inválidos. Necessário: alunos, gabarito"
+                }
+            )
+
+        alunos_raw = data['alunos']
+        gabarito_raw = data['gabarito']
+        areas_config_raw = data.get('areas_config', {
+            'LC': [1, 45],
+            'CH': [46, 90],
+            'CN': [1, 45],
+            'MT': [46, 90],
+        })
+
+        # ─── Converter gabarito (aceita lista ou dicionário) ───
+        if isinstance(gabarito_raw, list):
+            gabarito = {str(i + 1): v for i, v in enumerate(gabarito_raw)}
+        else:
+            gabarito = {str(k): v for k, v in gabarito_raw.items()}
+
+        areas_config = {k: tuple(v) for k, v in areas_config_raw.items()}
+
+        # ─── Converter alunos do formato V2 (letras) para campos qN ───
+        alunos = []
+        for aluno in alunos_raw:
+            aluno_conv = {
+                'id': aluno.get('id', ''),
+                'nome': aluno.get('nome', ''),
+            }
+            if 'respostas' in aluno and isinstance(aluno['respostas'], list):
+                for i, resp in enumerate(aluno['respostas']):
+                    aluno_conv[f'q{i + 1}'] = resp if resp else ''
+            else:
+                for key, val in aluno.items():
+                    if key.startswith('q') or key in [
+                        'id', 'nome', 'studentNumber', 'studentName', 'turma'
+                    ]:
+                        aluno_conv[key] = val
+            alunos.append(aluno_conv)
+
+        t0 = time.time()
+        print(f"\n[TRI V3 CIENTÍFICO] Processando {len(alunos)} alunos...")
+        print(f"[TRI V3 CIENTÍFICO] Gabarito: {len(gabarito)} questões | Áreas: {list(areas_config.keys())}")
+
+        # ─── Para cada área: converter letras→binário e rodar pipeline ───
+        resultados_por_aluno: Dict[str, Dict] = {}
+        diagnostico_geral: Dict[str, Any] = {}
+
+        for area_code, (start, end) in areas_config.items():
+            area_upper = area_code.upper()
+            if area_upper not in ['LC', 'CH', 'CN', 'MT']:
+                continue
+
+            # Montar vetor binário: comparar resposta do aluno com gabarito
+            alunos_binario = []
+            for aluno in alunos:
+                aluno_id = aluno.get('id', '')
+                respostas_bin = []
+                for q_num in range(start, end + 1):
+                    q_key = f'q{q_num}'
+                    resposta_aluno = str(aluno.get(q_key, '')).strip().upper()
+                    gabarito_q = str(gabarito.get(str(q_num), '')).strip().upper()
+                    acertou = 1 if (resposta_aluno and resposta_aluno == gabarito_q) else 0
+                    respostas_bin.append(acertou)
+
+                alunos_binario.append({
+                    'aluno_id': aluno_id,
+                    'nome': aluno.get('nome', ''),
+                    'respostas': respostas_bin,
+                })
+
+            # Mínimo de 10 alunos para calibração
+            if len(alunos_binario) < 10:
+                print(f"[TRI V3 CIENTÍFICO] AVISO: {area_upper} com {len(alunos_binario)} alunos (<10), usando mediana")
+                for ab in alunos_binario:
+                    acertos = sum(ab['respostas'])
+                    ref = tabela.obter(area_upper, acertos)
+                    aluno_id = ab['aluno_id']
+                    if aluno_id not in resultados_por_aluno:
+                        resultados_por_aluno[aluno_id] = {
+                            'id': aluno_id,
+                            'nome': ab['nome'],
+                        }
+                    from .motores.cientifico import estado_tri
+                    resultados_por_aluno[aluno_id][f'tri_{area_upper.lower()}'] = ref['tri_med']
+                    resultados_por_aluno[aluno_id][f'{area_upper.lower()}_acertos'] = acertos
+                continue
+
+            # Rodar pipeline científico para esta área
+            resultado_area = pipeline_cientifico(
+                alunos=alunos_binario,
+                area=area_upper,
+                tabela=tabela,
+            )
+
+            diagnostico_geral[area_upper] = resultado_area['diagnostico']
+
+            # Mapear resultados para formato V2
+            for r in resultado_area['resultados_alunos']:
+                aluno_id = r['aluno_id']
+                if aluno_id not in resultados_por_aluno:
+                    resultados_por_aluno[aluno_id] = {
+                        'id': aluno_id,
+                        'nome': r.get('nome', ''),
+                    }
+                resultados_por_aluno[aluno_id][f'tri_{area_upper.lower()}'] = r['nota_ancorada']
+                resultados_por_aluno[aluno_id][f'{area_upper.lower()}_acertos'] = r['acertos']
+                resultados_por_aluno[aluno_id][f'{area_upper.lower()}_theta'] = r['theta']
+                resultados_por_aluno[aluno_id][f'{area_upper.lower()}_estado'] = r['estado_tri']
+
+        # ─── Montar resultado final no formato V2 ───
+        resultados = []
+        for aluno_id, dados in resultados_por_aluno.items():
+            # TRI geral = média das áreas disponíveis
+            tris = [v for k, v in dados.items() if k.startswith('tri_') and isinstance(v, (int, float))]
+            tri_geral = round(float(np.mean(tris)), 1) if tris else 0.0
+
+            # TCT (nota bruta 0-4)
+            total_acertos = sum(v for k, v in dados.items() if k.endswith('_acertos') and isinstance(v, (int, float)))
+            total_questoes = sum(end - start + 1 for start, end in areas_config.values())
+            tct = round((total_acertos / total_questoes) * 4.0, 2) if total_questoes > 0 else 0.0
+
+            dados['tri_geral'] = tri_geral
+            dados['tct'] = tct
+            resultados.append(dados)
+
+        elapsed = time.time() - t0
+        print(f"[TRI V3 CIENTÍFICO] Concluído em {elapsed:.2f}s | {len(resultados)} alunos × {len(areas_config)} áreas")
+
+        # Prova analysis (resumo)
+        tris_gerais = [r['tri_geral'] for r in resultados if r.get('tri_geral')]
+        prova_analysis = {
+            'total_alunos': len(resultados),
+            'motor': 'cientifico_v3',
+            'tri_medio': round(float(np.mean(tris_gerais)), 1) if tris_gerais else 0,
+            'tri_min': round(float(np.min(tris_gerais)), 1) if tris_gerais else 0,
+            'tri_max': round(float(np.max(tris_gerais)), 1) if tris_gerais else 0,
+            'diagnostico_por_area': diagnostico_geral,
+        }
+
+        return JSONResponse(content=convert_numpy({
+            "status": "sucesso",
+            "total_alunos": len(resultados),
+            "prova_analysis": prova_analysis,
+            "resultados": resultados,
+        }))
+
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        print(f"[TRI V3 CIENTÍFICO] ERRO: {error_trace}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "erro",
+                "mensagem": str(e),
+                "trace": error_trace,
+            }
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # ENDPOINT — TABELA DE REFERÊNCIA (Útil para o frontend)
 # ════════════════════════════════════════════════════════════════════════════════
 
