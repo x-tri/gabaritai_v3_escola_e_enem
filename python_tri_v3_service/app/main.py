@@ -459,13 +459,36 @@ async def calcular_tri_cientifico(request: Request):
         else:
             gabarito = {str(k): v for k, v in gabarito_raw.items()}
 
-        areas_config = {k: tuple(v) for k, v in areas_config_raw.items()}
+        # ─── Normalizar nomes de área para códigos (CN, MT, LC, CH) ───
+        area_mapping = {
+            'LC': 'LC', 'Linguagens e Códigos': 'LC', 'Linguagens': 'LC',
+            'CH': 'CH', 'Ciências Humanas': 'CH',
+            'CN': 'CN', 'Ciências da Natureza': 'CN',
+            'MT': 'MT', 'Matemática': 'MT',
+        }
+        areas_config: Dict[str, tuple] = {}
+        for area_name, range_val in areas_config_raw.items():
+            code = area_mapping.get(area_name, area_name.upper())
+            if code in ['LC', 'CH', 'CN', 'MT']:
+                areas_config[code] = tuple(range_val)
+
+        if not areas_config:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "erro",
+                    "mensagem": f"areas_config inválido. Recebido: {list(areas_config_raw.keys())}. "
+                                "Esperado: LC/CH/CN/MT ou nomes por extenso"
+                }
+            )
 
         # ─── Converter alunos do formato V2 (letras) para campos qN ───
         alunos = []
         for aluno in alunos_raw:
+            # Aceitar 'id' ou 'nome' como identificador
+            aluno_id = aluno.get('id', '') or aluno.get('nome', '')
             aluno_conv = {
-                'id': aluno.get('id', ''),
+                'id': aluno_id,
                 'nome': aluno.get('nome', ''),
             }
             if 'respostas' in aluno and isinstance(aluno['respostas'], list):
@@ -479,28 +502,59 @@ async def calcular_tri_cientifico(request: Request):
                         aluno_conv[key] = val
             alunos.append(aluno_conv)
 
+        # ─── Detectar se questões no aluno são q1-qN mas areas_config é [91,135] ───
+        # Se o aluno tem q1 mas não q91, as respostas já vieram fatiadas pelo Express
+        primeiro_aluno = alunos[0] if alunos else {}
+        q_keys_aluno = sorted([int(k[1:]) for k in primeiro_aluno if k.startswith('q') and k[1:].isdigit()])
+        max_q_aluno = max(q_keys_aluno) if q_keys_aluno else 0
+        n_questoes_aluno = len(q_keys_aluno)
+        n_questoes_gabarito = len(gabarito)
+
+        # Se o aluno tem exatamente N questões e o gabarito também tem N,
+        # e areas_config tem múltiplas áreas com ranges > N (fatiado),
+        # então o Express mandou UMA área por vez — usar apenas a PRIMEIRA área válida
+        areas_fatiadas = {k: v for k, v in areas_config.items() if v[0] > max_q_aluno}
+        if len(areas_fatiadas) > 1 and n_questoes_aluno == n_questoes_gabarito:
+            # Payload fatiado com múltiplas áreas mas mesmas questões
+            # O Express envia uma área por vez — usar a primeira
+            primeira_area = list(areas_config.keys())[0]
+            print(f"[TRI V3 CIENTÍFICO] AVISO: payload fatiado com {len(areas_config)} áreas mas "
+                  f"aluno tem apenas q1-q{max_q_aluno}. Processando apenas {primeira_area}.")
+            areas_config = {primeira_area: areas_config[primeira_area]}
+
         t0 = time.time()
         print(f"\n[TRI V3 CIENTÍFICO] Processando {len(alunos)} alunos...")
         print(f"[TRI V3 CIENTÍFICO] Gabarito: {len(gabarito)} questões | Áreas: {list(areas_config.keys())}")
+        print(f"[TRI V3 CIENTÍFICO] Questões no aluno: q1 a q{max_q_aluno} ({n_questoes_aluno} total)")
 
         # ─── Para cada área: converter letras→binário e rodar pipeline ───
         resultados_por_aluno: Dict[str, Dict] = {}
         diagnostico_geral: Dict[str, Any] = {}
 
         for area_code, (start, end) in areas_config.items():
-            area_upper = area_code.upper()
-            if area_upper not in ['LC', 'CH', 'CN', 'MT']:
-                continue
+            n_questoes = end - start + 1
+
+            # Se aluno tem q1-q45 mas areas_config diz [91,135],
+            # as respostas já vieram fatiadas → usar q1 a qN
+            if start > max_q_aluno:
+                # Respostas fatiadas: q1 a q(n_questoes_aluno), gabarito 1 a n_gabarito
+                q_range = list(range(1, n_questoes_aluno + 1))
+                gab_range = list(range(1, n_questoes_gabarito + 1))
+                print(f"[TRI V3 CIENTÍFICO] {area_code}: fatiado, q1-q{n_questoes_aluno} vs gab 1-{n_questoes_gabarito}")
+            else:
+                # Respostas completas: qStart a qEnd
+                q_range = list(range(start, end + 1))
+                gab_range = list(range(start, end + 1))
 
             # Montar vetor binário: comparar resposta do aluno com gabarito
             alunos_binario = []
             for aluno in alunos:
                 aluno_id = aluno.get('id', '')
                 respostas_bin = []
-                for q_num in range(start, end + 1):
+                for q_num, g_num in zip(q_range, gab_range):
                     q_key = f'q{q_num}'
                     resposta_aluno = str(aluno.get(q_key, '')).strip().upper()
-                    gabarito_q = str(gabarito.get(str(q_num), '')).strip().upper()
+                    gabarito_q = str(gabarito.get(str(g_num), '')).strip().upper()
                     acertou = 1 if (resposta_aluno and resposta_aluno == gabarito_q) else 0
                     respostas_bin.append(acertou)
 
