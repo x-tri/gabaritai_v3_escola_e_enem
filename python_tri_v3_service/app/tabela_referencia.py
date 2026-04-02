@@ -11,10 +11,10 @@ from typing import Dict, Optional
 
 # Limites máximos oficiais do ENEM (teto absoluto histórico)
 TRI_MAXIMA_OFICIAL = {
-    'LC': 796.0,   # Linguagens e Códigos - ENEM 2024
-    'CH': 820.0,   # Ciências Humanas - ENEM 2024
-    'CN': 867.0,   # Ciências da Natureza - ENEM 2024
-    'MT': 962.0,   # Matemática - ENEM 2024
+    'LC': 835.0,   # Teto histórico conservador (top histórico ~835)
+    'CH': 855.0,   # Média histórica 45 acertos ≈ 856.5
+    'CN': 875.0,   # Média histórica 45 acertos ≈ 876.9
+    'MT': 990.0,   # Média histórica 45 acertos ≈ 994.8 (conservador, nunca 1000)
 }
 
 # Limites mínimos oficiais do ENEM

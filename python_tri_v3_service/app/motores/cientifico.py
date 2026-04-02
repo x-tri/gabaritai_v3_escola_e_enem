@@ -9,7 +9,7 @@ Implementa TRI 2PL real com:
 Regras invioláveis:
 1. Calibração independente por simulado × área (NUNCA misturar)
 2. Parâmetro c fixo em 0.20 (5 alternativas) para N < 500
-3. Ancoragem direta: nota = ref_min_K + pct_rank_θ × (ref_max_K − ref_min_K)
+3. Ancoragem contínua: nota = ref_min_K + norm.cdf(θ) × (ref_max_K − ref_min_K)
 """
 
 import numpy as np
@@ -126,7 +126,7 @@ def eap_theta(
     posterior /= s
     theta_eap = float(np.sum(theta_grid * posterior))
     se_eap = float(np.sqrt(np.sum((theta_grid - theta_eap) ** 2 * posterior)))
-    return round(theta_eap, 4), round(se_eap, 4)
+    return round(theta_eap, 6), round(se_eap, 4)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -143,9 +143,10 @@ def ancorar_notas(
 
     Lógica:
       - Para K acertos, a referência define [ref_min_K, ref_max_K]
-      - O rank percentil do θ dentro do grupo com mesmo K define a posição
-      - nota = ref_min_K + pct × (ref_max_K - ref_min_K)
-      - Grupo com 1 aluno → nota = ref_med_K
+      - A CDF da N(0,1) aplicada ao θ define a posição no intervalo (contínua)
+      - nota = ref_min_K + norm.cdf(θ) × (ref_max_K - ref_min_K)
+      - Intervalo colapsado (min == max) → nota fixa (ex: 45 acertos)
+      - Teto absoluto por área via TRI_MAXIMA_OFICIAL (proteção contra extrapolação)
 
     Args:
         thetas: Lista de dicts com 'aluno_id', 'acertos', 'theta', 'se'
@@ -157,14 +158,6 @@ def ancorar_notas(
     """
     resultados = []
 
-    # Agrupar thetas por número de acertos para calcular rank percentil
-    acertos_groups = {}
-    for t in thetas:
-        k = t['acertos']
-        if k not in acertos_groups:
-            acertos_groups[k] = []
-        acertos_groups[k].append(t['theta'])
-
     for t in thetas:
         k = t['acertos']
         theta_i = t['theta']
@@ -174,16 +167,15 @@ def ancorar_notas(
         ref_med = ref['tri_med']
         ref_max = ref['tri_max']
 
-        grupo = np.array(acertos_groups[k])
-
-        if len(grupo) == 1 or ref_min == ref_max:
+        if ref_min == ref_max:
+            # Intervalo colapsado (ex: 45 acertos) → nota fixa
             nota = ref_med
         else:
-            rank = np.sum(grupo < theta_i) + 0.5 * np.sum(grupo == theta_i)
-            pct = rank / len(grupo)
+            # Interpolação contínua via CDF N(0,1) — θ diferentes SEMPRE geram notas diferentes
+            pct = float(norm.cdf(theta_i))
             nota = ref_min + pct * (ref_max - ref_min)
 
-        # Aplicar teto oficial
+        # Teto absoluto por área (média histórica, proteção contra extrapolação)
         tri_maxima = TRI_MAXIMA_OFICIAL.get(area, 1000.0)
         nota = min(nota, tri_maxima)
 
